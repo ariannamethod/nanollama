@@ -1,6 +1,12 @@
 """
-Training configuration for nanollama micro model (~50M params).
+Training configuration for nanollama micro model.
 Single GPU training.
+
+Parameter count: 68,943,872 (~69M params)
+  embed = 32000 * 512 = 16,384,000
+  unembed = 32000 * 512 = 16,384,000
+  per_layer = 3,014,656
+  total = 32,768,000 + 12 * 3,014,656 = 68,943,872
 """
 
 # Model architecture
@@ -9,6 +15,9 @@ N_EMBD = 512
 N_HEAD = 8
 N_KV_HEAD = 2
 SEQUENCE_LEN = 2048
+
+# Exact parameter count: 68,943,872 (~69M)
+PARAM_COUNT = 68_943_872
 
 # Training
 TOTAL_BATCH_SIZE = 131072  # 128K tokens per step

@@ -25,6 +25,7 @@ class LlamaConfig:
     norm_eps: float = 1e-5
     multiple_of: int = 256
     window_pattern: str = "L"
+    rope_theta: float = 500000.0  # Llama 3 uses 500000, NOT 10000 (Llama 2)
 
 def get_config_for_depth(depth: int) -> LlamaConfig:
     """Get Llama 3 config for depth. Scales width/heads automatically."""
@@ -49,9 +50,9 @@ def get_config_for_depth(depth: int) -> LlamaConfig:
 def rms_norm(x: torch.Tensor, eps: float = 1e-5) -> torch.Tensor:
     return F.rms_norm(x, (x.size(-1),), eps=eps)
 
-def precompute_freqs_cis(dim: int, seq_len: int, theta: float = 10000.0,
+def precompute_freqs_cis(dim: int, seq_len: int, theta: float = 500000.0,
                           device: Optional[torch.device] = None) -> Tuple[torch.Tensor, torch.Tensor]:
-    """Precompute RoPE cos/sin of shape (1, seq_len, 1, dim//2)."""
+    """Precompute RoPE cos/sin. Llama 3 uses theta=500000 (NOT 10000 like Llama 2)."""
     inv_freq = 1.0 / (theta ** (torch.arange(0, dim, 2, dtype=torch.float32, device=device) / dim))
     t = torch.arange(seq_len, dtype=torch.float32, device=device)
     freqs = torch.outer(t, inv_freq)
@@ -174,7 +175,7 @@ class Llama(nn.Module):
         
         self.rotary_seq_len = config.sequence_len * 10
         head_dim = config.n_embd // config.n_head
-        cos, sin = precompute_freqs_cis(head_dim, self.rotary_seq_len)
+        cos, sin = precompute_freqs_cis(head_dim, self.rotary_seq_len, theta=config.rope_theta)
         self.register_buffer("cos", cos, persistent=False)
         self.register_buffer("sin", sin, persistent=False)
     
@@ -195,7 +196,8 @@ class Llama(nn.Module):
         
         head_dim = self.config.n_embd // self.config.n_head
         device = self.tok_embeddings.weight.device
-        self.cos, self.sin = precompute_freqs_cis(head_dim, self.rotary_seq_len, device=device)
+        self.cos, self.sin = precompute_freqs_cis(head_dim, self.rotary_seq_len, 
+                                                   theta=self.config.rope_theta, device=device)
         if device.type == "cuda":
             self.tok_embeddings.to(dtype=torch.bfloat16)
     

@@ -1,6 +1,12 @@
 """
-Training configuration for nanollama small model (~350M params).
+Training configuration for nanollama small model.
 Single A100 training.
+
+Parameter count: 336,068,608 (~336M params)
+  embed = 32000 * 1024 = 32,768,000
+  unembed = 32000 * 1024 = 32,768,000
+  per_layer = 11,272,192
+  total = 65,536,000 + 24 * 11,272,192 = 336,068,608
 """
 
 # Model architecture
@@ -9,6 +15,9 @@ N_EMBD = 1024
 N_HEAD = 16
 N_KV_HEAD = 4
 SEQUENCE_LEN = 2048
+
+# Exact parameter count: 336,068,608 (~336M)
+PARAM_COUNT = 336_068_608
 
 # Training
 TOTAL_BATCH_SIZE = 524288  # 512K tokens per step

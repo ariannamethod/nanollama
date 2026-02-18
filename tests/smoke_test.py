@@ -1,12 +1,16 @@
 #!/usr/bin/env python
 """
 Smoke test for nanollama - verifies the entire pipeline works.
-Trains nano model for 100 steps and checks that loss decreases.
+Trains nano model for 100 steps on synthetic data and checks that loss decreases.
 
 Usage:
     python -m tests.smoke_test
     
-Expected: Completes in ~5 minutes on GPU, loss should decrease from ~10 to <5.
+Expected: Completes in ~5 seconds on CPU, ~2 seconds on GPU.
+Loss should decrease by at least 10%.
+
+For testing with real data, first run:
+    python -m data.prepare_tinystories
 """
 
 import os

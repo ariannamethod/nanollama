@@ -65,6 +65,58 @@ def write_gguf_kv(f, key: str, value_type: int, value):
         write_gguf_string(f, value)
 
 
+def map_tensor_name(name: str) -> str:
+    """
+    Map nanollama tensor names to llama.cpp GGUF format.
+    
+    llama.cpp expects:
+    - model.embed_tokens.weight
+    - model.layers.N.self_attn.q_proj.weight
+    - model.layers.N.self_attn.k_proj.weight
+    - model.layers.N.self_attn.v_proj.weight
+    - model.layers.N.self_attn.o_proj.weight
+    - model.layers.N.mlp.gate_proj.weight
+    - model.layers.N.mlp.up_proj.weight
+    - model.layers.N.mlp.down_proj.weight
+    - model.norm.weight
+    - lm_head.weight
+    """
+    # Embedding
+    if name == "tok_embeddings.weight":
+        return "model.embed_tokens.weight"
+    
+    # Output projection
+    if name == "output.weight":
+        return "lm_head.weight"
+    
+    # Layer mappings
+    if name.startswith("layers."):
+        parts = name.split(".")
+        layer_idx = parts[1]
+        rest = ".".join(parts[2:])
+        
+        # Attention projections
+        if rest == "attn.c_q.weight":
+            return f"model.layers.{layer_idx}.self_attn.q_proj.weight"
+        if rest == "attn.c_k.weight":
+            return f"model.layers.{layer_idx}.self_attn.k_proj.weight"
+        if rest == "attn.c_v.weight":
+            return f"model.layers.{layer_idx}.self_attn.v_proj.weight"
+        if rest == "attn.c_proj.weight":
+            return f"model.layers.{layer_idx}.self_attn.o_proj.weight"
+        
+        # FFN projections
+        if rest == "ffn.gate_proj.weight":
+            return f"model.layers.{layer_idx}.mlp.gate_proj.weight"
+        if rest == "ffn.up_proj.weight":
+            return f"model.layers.{layer_idx}.mlp.up_proj.weight"
+        if rest == "ffn.down_proj.weight":
+            return f"model.layers.{layer_idx}.mlp.down_proj.weight"
+    
+    # Fallback: replace dots with underscores
+    return name.replace(".", "_")
+
+
 def main():
     args = parse_args()
     
@@ -101,7 +153,7 @@ def main():
             dtype = GGML_TYPE_F32
         
         # Map names to llama.cpp format
-        gguf_name = name.replace('.', '_')
+        gguf_name = map_tensor_name(name)
         
         tensor_names.append(gguf_name)
         tensor_data.append((gguf_name, arr, dtype))
