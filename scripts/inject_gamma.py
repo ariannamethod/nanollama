@@ -62,8 +62,10 @@ def load_gamma_npz(input_path: str) -> Dict[str, torch.Tensor]:
     """Load gamma from NPZ file and reconstruct full tensors."""
     data = np.load(input_path, allow_pickle=True)
     
-    # Get keys from metadata or infer
-    if "_metadata.keys" in data:
+    # Get keys from metadata (check both old and new naming)
+    if "_metadata.layer_names" in data:
+        keys = data["_metadata.layer_names"]
+    elif "_metadata.keys" in data:
         keys = data["_metadata.keys"]
     else:
         keys = set()
@@ -230,8 +232,8 @@ def inject_gamma(
             stats['skipped_shape'] += 1
             continue
         
-        # Inject: θ = ε + α×γ
-        state[target_key] = state[target_key].float() + alpha * gamma_tensor
+        # Inject: θ = ε + α×γ (convert gamma to match state dtype to avoid unnecessary conversions)
+        state[target_key] = state[target_key] + alpha * gamma_tensor.to(state[target_key].dtype)
         
         gamma_norm = gamma_tensor.norm().item()
         stats['total_gamma_norm'] += gamma_norm ** 2

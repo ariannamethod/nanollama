@@ -181,8 +181,8 @@ def save_gamma_npz(
             total_values += len(values)
             total_elements += diff.numel()
     
-    # Add metadata
-    data["_metadata.keys"] = np.array(list(gamma.keys()), dtype=object)
+    # Add metadata (use descriptive names to avoid confusion with Python builtins)
+    data["_metadata.layer_names"] = np.array(list(gamma.keys()), dtype=object)
     data["_metadata.total_norm"] = np.array(sum(info['norm'] ** 2 for info in gamma.values()) ** 0.5)
     
     # Save compressed
@@ -206,8 +206,10 @@ def load_gamma_npz(input_path: str) -> Dict[str, torch.Tensor]:
     """
     data = np.load(input_path, allow_pickle=True)
     
-    # Get keys from metadata
-    if "_metadata.keys" in data:
+    # Get keys from metadata (check both old and new naming)
+    if "_metadata.layer_names" in data:
+        keys = data["_metadata.layer_names"]
+    elif "_metadata.keys" in data:
         keys = data["_metadata.keys"]
     else:
         # Infer from stored data

@@ -20,6 +20,9 @@ import torch
 import numpy as np
 import pytest
 
+# Test tolerance for weight comparisons
+WEIGHT_DIFF_TOLERANCE = 0.01
+
 
 class TestPipeline:
     """Integration tests for the full nanollama pipeline."""
@@ -275,7 +278,7 @@ class TestPipeline:
         for key in state_personality:
             if key in state_injected:
                 diff = (state_injected[key].float() - state_personality[key].float()).abs().max()
-                assert diff < 0.01, f"Injected weights don't match: {key}, diff={diff}"
+                assert diff < WEIGHT_DIFF_TOLERANCE, f"Injected weights don't match: {key}, diff={diff}"
     
     def test_full_pipeline_under_60_seconds(self, temp_dir):
         """Test the complete pipeline completes in <60 seconds."""
