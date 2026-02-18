@@ -70,15 +70,18 @@ def extract_gamma(
     ckpt_base = torch.load(checkpoint_without_personality, map_location='cpu', weights_only=False)
     
     # Get state dicts (handle both formats)
+    # Handle _orig_mod. prefix from torch.compile
     if 'model_state_dict' in ckpt_personality:
         state_personality = ckpt_personality['model_state_dict']
     else:
         state_personality = ckpt_personality
-    
+    state_personality = {k.replace('_orig_mod.', ''): v for k, v in state_personality.items()}
+
     if 'model_state_dict' in ckpt_base:
         state_base = ckpt_base['model_state_dict']
     else:
         state_base = ckpt_base
+    state_base = {k.replace('_orig_mod.', ''): v for k, v in state_base.items()}
     
     # Verify same architecture
     if set(state_personality.keys()) != set(state_base.keys()):

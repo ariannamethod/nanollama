@@ -34,9 +34,10 @@ def save_checkpoint(
     checkpoint_path = os.path.join(checkpoint_dir, f"{name}_step{step}.pt")
     meta_path = os.path.join(checkpoint_dir, f"{name}_step{step}_meta.json")
     
-    # Save model state dict
+    # Save model state dict — strip _orig_mod. prefix from torch.compile
+    state_dict = {k.replace('_orig_mod.', ''): v for k, v in model.state_dict().items()}
     checkpoint = {
-        'model_state_dict': model.state_dict(),
+        'model_state_dict': state_dict,
         'optimizer_state_dict': optimizer.state_dict() if optimizer else None,
         'step': step,
         'config': config,
@@ -135,7 +136,10 @@ def load_model(
     config = LlamaConfig(**config_dict)
     
     model = Llama(config)
-    model.load_state_dict(checkpoint['model_state_dict'])
+    # Handle _orig_mod. prefix from torch.compile checkpoints
+    state = checkpoint['model_state_dict']
+    state = {k.replace('_orig_mod.', ''): v for k, v in state.items()}
+    model.load_state_dict(state)
     model.to(device)
     
     if phase == "eval":

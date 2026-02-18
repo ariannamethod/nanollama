@@ -166,12 +166,13 @@ def inject_gamma(
     print0("Loading base checkpoint...")
     ckpt = torch.load(base_ckpt_path, map_location='cpu', weights_only=False)
     
-    # Get state dict
+    # Get state dict — handle _orig_mod. prefix from torch.compile
     if 'model_state_dict' in ckpt:
         state = ckpt['model_state_dict']
     else:
         state = ckpt
         ckpt = {'model_state_dict': state}
+    state = {k.replace('_orig_mod.', ''): v for k, v in state.items()}
     
     # Count layers in both
     gamma_layers = set()
