@@ -6,6 +6,7 @@ Usage:
     python -m data.prepare_shakespeare
 """
 
+import json
 import os
 import argparse
 
@@ -55,7 +56,6 @@ def prepare_shakespeare(output_dir: str = None):
     # Split into chunks and create conversation-style data
     chunk_size = 500
     with open(jsonl_path, 'w') as f:
-        import json
         for i in range(0, len(train_text) - chunk_size, chunk_size):
             chunk = train_text[i:i + chunk_size]
             # Create simple prompt-completion pair

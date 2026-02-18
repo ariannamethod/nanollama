@@ -184,8 +184,13 @@ def main():
 
             # Pad sequences
             max_len = max(len(s) for s in generated_seqs)
-            assistant_end = tokenizer.encode_special("<|assistant_end|>") or 0
-            padded_seqs = [s + [assistant_end] * (max_len - len(s)) for s in generated_seqs]
+            # Get padding token (fall back to 0 if encode_special returns None or empty)
+            pad_token = tokenizer.encode_special("<|assistant_end|>")
+            if not pad_token:  # handles None or empty list
+                pad_token = 0
+            elif isinstance(pad_token, list):
+                pad_token = pad_token[0] if pad_token else 0
+            padded_seqs = [s + [pad_token] * (max_len - len(s)) for s in generated_seqs]
             padded_masks = [m + [0] * (max_len - len(m)) for m in masks]
 
             ids = torch.tensor(padded_seqs, dtype=torch.long, device=device)

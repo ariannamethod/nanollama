@@ -68,8 +68,9 @@ def run_generative_eval(task_object, tokenizer, model, engine,
         total = total_t.item()
 
     print0("=" * 50)
-    print0(f"Final: {num_passed}/{total} ({100*num_passed/total:.2f}%)")
-    return num_passed / total
+    accuracy = num_passed / total if total > 0 else 0.0
+    print0(f"Final: {num_passed}/{total} ({100*accuracy:.2f}%)")
+    return accuracy
 
 
 def run_categorical_eval(task_object, tokenizer, model, batch_size, max_problems=None):
@@ -123,7 +124,7 @@ def run_categorical_eval(task_object, tokenizer, model, batch_size, max_problems
         num_passed = num_passed_t.item()
         total = total_t.item()
 
-    avg = num_passed / total
+    avg = num_passed / total if total > 0 else 0.0
     print0(f"Final: {num_passed}/{total} ({100*avg:.2f}%)")
     return avg
 

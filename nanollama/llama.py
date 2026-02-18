@@ -28,14 +28,18 @@ class LlamaConfig:
 
 def get_config_for_depth(depth: int) -> LlamaConfig:
     """Get Llama 3 config for depth. Scales width/heads automatically."""
-    configs = {
-        6: (384, 6, 2), 12: (512, 8, 2), 16: (768, 12, 4),
-        24: (1024, 16, 4), 28: (2048, 32, 8), 32: (3200, 32, 8),
-    }
-    for d in sorted(configs.keys()):
-        if depth <= d:
-            n_embd, n_head, n_kv_head = configs[d]
-            break
+    if depth <= 6:
+        n_embd, n_head, n_kv_head = 384, 6, 2
+    elif depth <= 12:
+        n_embd, n_head, n_kv_head = 512, 8, 2
+    elif depth <= 16:
+        n_embd, n_head, n_kv_head = 768, 12, 4
+    elif depth <= 24:
+        n_embd, n_head, n_kv_head = 1024, 16, 4
+    elif depth <= 28:
+        n_embd, n_head, n_kv_head = 2048, 32, 8
+    elif depth <= 32:
+        n_embd, n_head, n_kv_head = 3200, 32, 8
     else:
         n_embd = min(4096, 256 * (depth // 4))
         n_head = min(64, n_embd // 64)

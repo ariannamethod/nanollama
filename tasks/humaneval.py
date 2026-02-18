@@ -56,10 +56,10 @@ def execute_code_safe(program: str, timeout: int = 5) -> bool:
         )
         os.unlink(temp_path)
         return result.returncode == 0
-    except (subprocess.TimeoutExpired, Exception):
+    except (subprocess.TimeoutExpired, OSError, subprocess.SubprocessError):
         try:
             os.unlink(temp_path)
-        except:
+        except OSError:
             pass
         return False
 

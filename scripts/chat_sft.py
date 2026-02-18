@@ -171,9 +171,10 @@ def main():
         for _ in range(args.device_batch_size):
             conversation = train_dataset[cursor % len(train_dataset)]
             ids, _ = tokenizer.render_conversation(conversation, max_tokens=args.max_seq_len + 1)
-            # Pad if needed
+            # Pad with EOS tokens if needed (targets will be masked)
             if len(ids) < args.max_seq_len + 1:
-                ids = ids + [tokenizer.get_bos_token_id()] * (args.max_seq_len + 1 - len(ids))
+                eos_token = tokenizer.get_eos_token_id() or tokenizer.get_bos_token_id()
+                ids = ids + [eos_token] * (args.max_seq_len + 1 - len(ids))
             batch_ids.append(ids[:args.max_seq_len + 1])
             cursor += ddp_world_size
         

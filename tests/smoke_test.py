@@ -124,11 +124,11 @@ def main():
     # Test generation
     print("\n--- Testing Generation ---")
     model.eval()
-    prompt = [0, 1, 2, 3, 4]  # Some token IDs
+    initial_tokens = [0, 1, 2, 3, 4]  # Some token IDs
     generated = []
-    for token in model.generate(prompt, max_tokens=10, temperature=0.8):
+    for token in model.generate(initial_tokens, max_tokens=10, temperature=0.8):
         generated.append(token)
-    print(f"✓ Generated {len(generated)} tokens from prompt")
+    print(f"✓ Generated {len(generated)} tokens from initial tokens")
     
     print("\n" + "=" * 60)
     if success:

@@ -13,6 +13,11 @@ Pre-calculated configs for each model size, derived from --depth parameter.
 │ medium │ 32    │ 2048    │ 32    │ 8        │ ~1B     │ 4×A100             │
 │ large  │ 32    │ 3200    │ 32    │ 8        │ ~3B     │ 8×A100             │
 └────────┴───────┴─────────┴───────┴──────────┴─────────┴────────────────────┘
+
+Note: medium and large both use depth=32 (following Llama scaling laws).
+At larger scales, width scaling is more effective than depth scaling for
+parameter efficiency. Depth=32 is also the practical limit for effective
+gradient flow without additional techniques.
 """
 
 from nanollama.llama import LlamaConfig
