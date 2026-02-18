@@ -26,8 +26,10 @@ class GSM8KTask(Task):
     
     def _load_data(self):
         """Load GSM8K dataset."""
+        # Placeholder - actual implementation would download from HuggingFace
+        # e.g.: datasets.load_dataset("gsm8k", "main", split=self.split)
         self.samples = []
-        print0(f"GSM8K task: {len(self.samples)} samples loaded")
+        # Note: samples will be empty until dataset loading is implemented
     
     def get_samples(self) -> Iterator[TaskSample]:
         """Yield GSM8K samples."""

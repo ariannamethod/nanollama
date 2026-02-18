@@ -50,7 +50,7 @@ class SentencePieceTokenizer:
         Initialize tokenizer with a SentencePiece model.
         
         Args:
-            sp_model: Loaded SentencePiece processor
+            sp_model: Loaded SentencePiece processor (sentencepiece.SentencePieceProcessor)
             special_tokens: Dict mapping special token strings to their IDs
         """
         self.sp_model = sp_model

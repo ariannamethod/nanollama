@@ -26,9 +26,10 @@ class ARCTask(Task):
     
     def _load_data(self):
         """Load ARC dataset."""
-        # Placeholder - would download from HuggingFace
+        # Placeholder - actual implementation would download from HuggingFace
+        # e.g.: datasets.load_dataset("allenai/ai2_arc", "ARC-Challenge", split=self.split)
         self.samples = []
-        print0(f"ARC task: {len(self.samples)} samples loaded")
+        # Note: samples will be empty until dataset loading is implemented
     
     def get_samples(self) -> Iterator[TaskSample]:
         """Yield ARC samples."""

@@ -13,6 +13,7 @@ Distributed:
 import os
 import sys
 import time
+import math
 import argparse
 from contextlib import nullcontext
 
@@ -71,7 +72,7 @@ def get_lr_schedule(step, warmup_iters, max_iters, max_lr, min_lr_ratio=0.1):
     
     progress = (step - warmup_iters) / (max_iters - warmup_iters)
     min_lr = max_lr * min_lr_ratio
-    return min_lr + 0.5 * (max_lr - min_lr) * (1 + torch.cos(torch.tensor(progress * 3.14159)).item())
+    return min_lr + 0.5 * (max_lr - min_lr) * (1 + math.cos(progress * math.pi))
 
 
 def main():

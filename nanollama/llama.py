@@ -623,6 +623,9 @@ class Llama(nn.Module):
         x = rms_norm(x, self.config.norm_eps)
         
         # Compute logits
+        # Note: We compute logits for the padded vocabulary and then slice to remove padding.
+        # This is more efficient than having a separate output layer for the exact vocab size
+        # because it allows tensor core alignment and DDP efficiency.
         softcap = 15.0  # Smooth logit capping
         logits = self.output(x)
         logits = logits[..., :self.config.vocab_size]  # Remove padding

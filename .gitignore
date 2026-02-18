@@ -41,13 +41,16 @@ env/
 .coverage
 htmlcov/
 
-# Model checkpoints and data
+# Model checkpoints and data files
 *.pt
 *.bin
 *.gguf
 checkpoints/
-data/
 *.pkl
+# Ignore downloaded data, but keep data/ scripts
+data/*.bin
+data/*.txt
+data/*.jsonl
 
 # Logs
 *.log

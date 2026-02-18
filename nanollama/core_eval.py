@@ -5,6 +5,7 @@ Evaluates base model quality using the DCLM benchmark.
 
 import os
 import json
+import math
 import torch
 import torch.nn.functional as F
 from typing import Dict, Any, List, Optional, Tuple
@@ -48,7 +49,7 @@ def compute_bits_per_byte(
     num_tokens = len(tokens) - 1  # Exclude first token
     
     loss_nats = loss.item()
-    bpb = loss_nats * num_tokens / num_bytes / 0.6931471805599453  # ln(2)
+    bpb = loss_nats * num_tokens / num_bytes / math.log(2)
     
     return bpb
 
