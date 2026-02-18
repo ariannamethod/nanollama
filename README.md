@@ -118,4 +118,4 @@ That's it.
 
 ## License
 
-MIT
+GPLv3
