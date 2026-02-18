@@ -50,7 +50,7 @@ def parse_args():
     parser.add_argument("--num-iterations", type=int, default=10000, help="Number of training iterations")
     parser.add_argument("--warmup-iters", type=int, default=100, help="Warmup iterations")
     parser.add_argument("--lr", type=float, default=None, help="Learning rate (auto if None)")
-    parser.add_argument("--weight-decay", type=float, default=0.0, help="Weight decay")
+    parser.add_argument("--weight-decay", type=float, default=0.01, help="Weight decay (Moonlight: critical for Muon scaling)")
     
     # Logging & Checkpoints
     parser.add_argument("--run", type=str, default="nanollama", help="Run name for wandb")
@@ -65,14 +65,18 @@ def parse_args():
     return parser.parse_args()
 
 
-def get_lr_schedule(step, warmup_iters, max_iters, max_lr, min_lr_ratio=0.1):
-    """Cosine learning rate schedule with warmup."""
+def get_lr_schedule(step, warmup_iters, max_iters, max_lr, min_lr_ratio=0.0):
+    """WSD (Warmup-Stable-Decay) schedule. Better than cosine: no need to know total steps upfront."""
+    decay_start = int(max_iters * 0.80)  # Last 20% is decay
     if step < warmup_iters:
         return max_lr * (step + 1) / warmup_iters
-    
-    progress = (step - warmup_iters) / (max_iters - warmup_iters)
-    min_lr = max_lr * min_lr_ratio
-    return min_lr + 0.5 * (max_lr - min_lr) * (1 + math.cos(progress * math.pi))
+    elif step < decay_start:
+        return max_lr  # Stable phase
+    else:
+        # Linear decay to zero
+        progress = (step - decay_start) / (max_iters - decay_start)
+        final_lr = max_lr * min_lr_ratio
+        return final_lr + (max_lr - final_lr) * (1 - progress)
 
 
 def main():

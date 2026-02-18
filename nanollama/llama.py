@@ -3,6 +3,7 @@ Llama 3 model for nanollama. Clean, minimal implementation (~500 lines).
 RoPE, GQA, SwiGLU, RMSNorm, pre-norm, no bias, untied embeddings, no dropout.
 """
 
+from contextlib import nullcontext
 from dataclasses import dataclass
 from typing import Optional, Tuple, List
 
@@ -48,7 +49,7 @@ def get_config_for_depth(depth: int) -> LlamaConfig:
     return LlamaConfig(n_layer=depth, n_embd=n_embd, n_head=n_head, n_kv_head=n_kv_head)
 
 def rms_norm(x: torch.Tensor, eps: float = 1e-5) -> torch.Tensor:
-    return F.rms_norm(x, (x.size(-1),), eps=eps)
+    return x * torch.rsqrt(x.pow(2).mean(-1, keepdim=True) + eps)
 
 def precompute_freqs_cis(dim: int, seq_len: int, theta: float = 500000.0,
                           device: Optional[torch.device] = None) -> Tuple[torch.Tensor, torch.Tensor]:
@@ -93,7 +94,7 @@ class CausalSelfAttention(nn.Module):
         cos, sin = cos_sin
         q, k = apply_rotary_emb(q, cos, sin), apply_rotary_emb(k, cos, sin)
         q, k = rms_norm(q, self.norm_eps), rms_norm(k, self.norm_eps)
-        
+
         if kv_cache is not None:
             y = self._attn_with_cache(q, k, v, kv_cache)
             if self.layer_idx == kv_cache.n_layers - 1:
@@ -252,17 +253,20 @@ class Llama(nn.Module):
         T0 = 0 if kv_cache is None else kv_cache.get_pos()
         cos_sin = self.cos[:, T0:T0+T], self.sin[:, T0:T0+T]
         
-        x = rms_norm(self.tok_embeddings(idx), self.config.norm_eps)
+        x = self.tok_embeddings(idx)
         for i, layer in enumerate(self.layers):
             x = layer(x, cos_sin, self.window_sizes[i], kv_cache)
         x = rms_norm(x, self.config.norm_eps)
         
         logits = self.output(x)[..., :self.config.vocab_size].float()
-        logits = 15.0 * torch.tanh(logits / 15.0)  # Softcap
         
         if targets is not None:
-            return F.cross_entropy(logits.reshape(-1, logits.size(-1)), targets.reshape(-1),
-                                   ignore_index=-1, reduction=loss_reduction)
+            ce_loss = F.cross_entropy(logits.reshape(-1, logits.size(-1)), targets.reshape(-1),
+                                      ignore_index=-1, reduction=loss_reduction)
+            # Z-loss: penalize large logits, eliminates sporadic loss spikes
+            log_z = torch.logsumexp(logits, dim=-1)
+            z_loss = 1e-4 * (log_z ** 2).mean()
+            return ce_loss + z_loss
         return logits
     
     @torch.inference_mode()
@@ -271,9 +275,11 @@ class Llama(nn.Module):
         device = self.get_device()
         rng = torch.Generator(device=device).manual_seed(seed) if temperature > 0 else None
         ids = torch.tensor([tokens], dtype=torch.long, device=device)
-        
+        autocast = torch.amp.autocast(device.type, dtype=torch.bfloat16) if device.type == 'cuda' else nullcontext()
+
         for _ in range(max_tokens):
-            logits = self.forward(ids)[:, -1, :]
+            with autocast:
+                logits = self.forward(ids)[:, -1, :]
             if top_k and top_k > 0:
                 v, _ = torch.topk(logits, min(top_k, logits.size(-1)))
                 logits[logits < v[:, [-1]]] = -float('Inf')
