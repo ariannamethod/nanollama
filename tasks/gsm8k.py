@@ -1,124 +1,69 @@
 """
 GSM8K task for nanollama.
 Grade school math word problems.
+
+Adapted from nanochat for nanollama.
 """
 
-import os
-import json
 import re
-from typing import Dict, Iterator
+from datasets import load_dataset
+from tasks.common import Task
 
-import torch
-
-from tasks.common import Task, TaskSample
-from nanollama.common import print0
+# Answer extraction regex
+ANSWER_RE = re.compile(r"#### (\-?[0-9\.\,]+)")
 
 
-class GSM8KTask(Task):
+def extract_answer(completion):
+    """Extract the numerical answer after #### marker."""
+    match = ANSWER_RE.search(completion)
+    if match:
+        match_str = match.group(1).strip()
+        match_str = match_str.replace(",", "")
+        return match_str
+    return None
+
+
+class GSM8K(Task):
     """GSM8K math evaluation task."""
-    
-    name = "gsm8k"
-    
-    def __init__(self, split: str = "test", num_samples: int = None):
-        super().__init__(num_samples)
+
+    def __init__(self, subset="main", split="train", **kwargs):
+        super().__init__(**kwargs)
+        assert subset in ["main", "socratic"], f"subset {subset} must be main|socratic"
+        assert split in ["train", "test"], f"split {split} must be train|test"
+        self.subset = subset
         self.split = split
-        self._load_data()
-    
-    def _load_data(self):
-        """Load GSM8K dataset."""
-        # Placeholder - actual implementation would download from HuggingFace
-        # e.g.: datasets.load_dataset("gsm8k", "main", split=self.split)
-        self.samples = []
-        # Note: samples will be empty until dataset loading is implemented
-    
-    def get_samples(self) -> Iterator[TaskSample]:
-        """Yield GSM8K samples."""
-        count = 0
-        for sample in self.samples:
-            if self.num_samples and count >= self.num_samples:
-                break
-            
-            question = sample.get("question", "")
-            answer = sample.get("answer", "")
-            
-            # Extract final numerical answer
-            final_answer = self._extract_answer(answer)
-            
-            yield TaskSample(
-                prompt=question,
-                answer=final_answer,
-                metadata={"full_answer": answer},
-            )
-            count += 1
-    
-    def _extract_answer(self, answer_text: str) -> str:
-        """Extract final numerical answer from GSM8K answer format."""
-        # GSM8K answers end with "#### <number>"
-        match = re.search(r'####\s*([0-9,.\-]+)', answer_text)
-        if match:
-            return match.group(1).replace(',', '')
-        return ""
-    
-    def _parse_generated_answer(self, text: str) -> str:
-        """Parse numerical answer from generated text."""
-        # Look for patterns like "the answer is X" or just the last number
-        patterns = [
-            r'[Tt]he answer is[:\s]*([0-9,.\-]+)',
-            r'####\s*([0-9,.\-]+)',
-            r'=\s*([0-9,.\-]+)\s*$',
+        self.ds = load_dataset("openai/gsm8k", subset, split=split).shuffle(seed=42)
+
+    @property
+    def eval_type(self):
+        return 'generative'
+
+    def num_examples(self):
+        return len(self.ds)
+
+    def get_example(self, index):
+        row = self.ds[index]
+        question = row["question"]
+        answer = row["answer"]
+        # Create conversation for training/evaluation
+        messages = [
+            {"role": "user", "content": question},
+            {"role": "assistant", "content": answer},
         ]
-        
-        for pattern in patterns:
-            match = re.search(pattern, text)
-            if match:
-                return match.group(1).replace(',', '')
-        
-        # Fall back to last number in text
-        numbers = re.findall(r'[0-9,.\-]+', text)
-        if numbers:
-            return numbers[-1].replace(',', '')
-        
-        return ""
-    
-    def evaluate(self, model, tokenizer, device, max_tokens: int = 256) -> Dict[str, float]:
-        """Evaluate model on GSM8K."""
-        from nanollama.engine import Engine
-        
-        model.eval()
-        engine = Engine(model, tokenizer)
-        
-        correct = 0
-        total = 0
-        
-        for sample in self.get_samples():
-            prompt = f"Question: {sample.prompt}\nLet's solve this step by step.\n"
-            tokens = tokenizer.encode(prompt, prepend=tokenizer.get_bos_token_id())
-            
-            # Generate
-            generated_tokens = []
-            for token_column, _ in engine.generate(
-                tokens,
-                num_samples=1,
-                max_tokens=max_tokens,
-                temperature=0.0,
-            ):
-                generated_tokens.append(token_column[0])
-            
-            generated_text = tokenizer.decode(generated_tokens)
-            predicted_answer = self._parse_generated_answer(generated_text)
-            
-            # Compare
-            try:
-                if float(predicted_answer) == float(sample.answer):
-                    correct += 1
-            except (ValueError, TypeError):
-                pass
-            
-            total += 1
-        
-        accuracy = correct / total if total > 0 else 0.0
-        return {
-            "accuracy": accuracy,
-            "correct": correct,
-            "total": total,
-        }
+        conversation = {"messages": messages}
+        return conversation
+
+    def evaluate(self, conversation, assistant_response):
+        """
+        Given (conversation, completion), return evaluation outcome.
+        """
+        assistant_message = conversation['messages'][-1]['content']
+        ref_num = extract_answer(assistant_message)
+        pred_num = extract_answer(assistant_response)
+        is_correct = int(pred_num == ref_num) if ref_num and pred_num else 0
+        return is_correct
+
+    def reward(self, conversation, assistant_response):
+        """Use simple 0-1 reward."""
+        is_correct = self.evaluate(conversation, assistant_response)
+        return float(is_correct)

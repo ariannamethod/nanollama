@@ -1,96 +1,48 @@
 """
-ARC (AI2 Reasoning Challenge) task for nanollama.
-Multiple choice science questions.
+The ARC dataset from Allen AI.
+https://huggingface.co/datasets/allenai/ai2_arc
+
+Adapted from nanochat for nanollama.
 """
 
-import os
-import json
-from typing import Dict, Iterator
-
-import torch
-import torch.nn.functional as F
-
-from tasks.common import Task, TaskSample
-from nanollama.common import download_file_with_lock, print0
+from datasets import load_dataset
+from tasks.common import Task, render_mc
 
 
-class ARCTask(Task):
-    """ARC Challenge evaluation task."""
-    
-    name = "arc"
-    
-    def __init__(self, split: str = "test", num_samples: int = None):
-        super().__init__(num_samples)
-        self.split = split
-        self._load_data()
-    
-    def _load_data(self):
-        """Load ARC dataset."""
-        # Placeholder - actual implementation would download from HuggingFace
-        # e.g.: datasets.load_dataset("allenai/ai2_arc", "ARC-Challenge", split=self.split)
-        self.samples = []
-        # Note: samples will be empty until dataset loading is implemented
-    
-    def get_samples(self) -> Iterator[TaskSample]:
-        """Yield ARC samples."""
-        count = 0
-        for sample in self.samples:
-            if self.num_samples and count >= self.num_samples:
-                break
-            
-            question = sample.get("question", "")
-            choices = sample.get("choices", {}).get("text", [])
-            answer_key = sample.get("answerKey", "A")
-            
-            # Convert answer key to index
-            answer_idx = ord(answer_key) - ord('A')
-            
-            yield TaskSample(
-                prompt=question,
-                choices=choices,
-                answer=choices[answer_idx] if answer_idx < len(choices) else "",
-                answer_idx=answer_idx,
-            )
-            count += 1
-    
-    def evaluate(self, model, tokenizer, device) -> Dict[str, float]:
-        """Evaluate model on ARC."""
-        model.eval()
-        correct = 0
-        total = 0
-        
-        for sample in self.get_samples():
-            if not sample.choices:
-                continue
-            
-            # Compute log probability for each choice
-            choice_scores = []
-            
-            for choice in sample.choices:
-                prompt = f"Question: {sample.prompt}\nAnswer: {choice}"
-                tokens = tokenizer.encode(prompt, prepend=tokenizer.get_bos_token_id())
-                
-                with torch.no_grad():
-                    input_ids = torch.tensor([tokens[:-1]], device=device)
-                    target_ids = torch.tensor([tokens[1:]], device=device)
-                    logits = model(input_ids)
-                    
-                    # Compute log probability
-                    log_probs = F.log_softmax(logits, dim=-1)
-                    token_log_probs = log_probs.gather(2, target_ids.unsqueeze(-1)).squeeze(-1)
-                    score = token_log_probs.sum().item()
-                
-                choice_scores.append(score)
-            
-            # Check if best choice matches answer
-            predicted_idx = max(range(len(choice_scores)), key=lambda i: choice_scores[i])
-            if predicted_idx == sample.answer_idx:
-                correct += 1
-            total += 1
-        
-        accuracy = correct / total if total > 0 else 0.0
-        return {
-            "accuracy": accuracy,
-            "correct": correct,
-            "total": total,
+class ARC(Task):
+
+    def __init__(self, subset, split, **kwargs):
+        super().__init__(**kwargs)
+        assert subset in ["ARC-Easy", "ARC-Challenge"], "ARC subset must be ARC-Easy or ARC-Challenge"
+        assert split in ["train", "validation", "test"], "ARC split must be train|validation|test"
+        self.ds = load_dataset("allenai/ai2_arc", subset, split=split).shuffle(seed=42)
+
+    @property
+    def eval_type(self):
+        return 'categorical'
+
+    def num_examples(self):
+        return len(self.ds)
+
+    def get_example(self, index):
+        row = self.ds[index]
+        question = row["question"]
+        choices = row["choices"]["text"]
+        answer_string = row["answerKey"]
+        letters = row["choices"]["label"]
+        assert answer_string in letters
+        user_message = render_mc(question, letters, choices)
+        messages = [
+            {"role": "user", "content": user_message},
+            {"role": "assistant", "content": answer_string}
+        ]
+        conversation = {
+            "messages": messages,
+            "letters": letters,
         }
+        return conversation
+
+    def evaluate(self, conversation, assistant_response):
+        assert assistant_response in conversation['letters']
+        assistant_message = conversation['messages'][-1]['content']
+        return assistant_response == assistant_message
