@@ -68,7 +68,7 @@ if [ ! -d "$DATA_DIR" ] || [ $(ls "$DATA_DIR"/*.bin 2>/dev/null | wc -l) -lt 5 ]
     echo "========================================"
     echo "  Step 1: Preparing FineWeb-Edu data"
     echo "========================================"
-    python -u -m data.prepare_fineweb --num-shards 22
+    python -u -m data.prepare_fineweb --num-samples 2000000
 else
     echo ""
     echo "Step 1: FineWeb-Edu data already exists ($(ls "$DATA_DIR"/*.bin | wc -l) shards)"
