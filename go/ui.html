@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>nanollama Chat</title>
+    <title>nanollama</title>
     <style>
         :root {
             --bg-color: #1a1a2e;
@@ -33,9 +33,16 @@
 
         header {
             background: linear-gradient(135deg, var(--accent), #ff6b6b);
-            padding: 1rem 2rem;
-            text-align: center;
+            padding: 0.75rem 2rem;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
             box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
+        }
+
+        header .title {
+            text-align: center;
+            flex: 1;
         }
 
         header h1 {
@@ -47,7 +54,22 @@
         header p {
             font-size: 0.8rem;
             opacity: 0.8;
-            margin-top: 0.25rem;
+            margin-top: 0.15rem;
+        }
+
+        #clear-btn {
+            padding: 0.5rem 1rem;
+            background: rgba(255, 255, 255, 0.15);
+            color: white;
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            border-radius: 0.5rem;
+            font-size: 0.85rem;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+
+        #clear-btn:hover {
+            background: rgba(255, 255, 255, 0.25);
         }
 
         .chat-container {
@@ -64,6 +86,7 @@
             border-radius: 1rem;
             line-height: 1.6;
             animation: fadeIn 0.3s ease;
+            white-space: pre-wrap;
         }
 
         @keyframes fadeIn {
@@ -89,19 +112,6 @@
             margin-bottom: 0.5rem;
             text-transform: uppercase;
             letter-spacing: 0.1em;
-        }
-
-        .message pre {
-            background-color: rgba(0, 0, 0, 0.3);
-            padding: 0.75rem;
-            border-radius: 0.5rem;
-            overflow-x: auto;
-            margin: 0.5rem 0;
-        }
-
-        .message code {
-            font-family: 'Fira Code', 'Consolas', monospace;
-            font-size: 0.9em;
         }
 
         .input-container {
@@ -137,7 +147,7 @@
             color: var(--text-muted);
         }
 
-        button {
+        #send-btn {
             padding: 1rem 1.5rem;
             background: linear-gradient(135deg, var(--accent), #ff6b6b);
             color: white;
@@ -148,11 +158,11 @@
             transition: transform 0.1s, opacity 0.2s;
         }
 
-        button:hover {
+        #send-btn:hover {
             transform: scale(1.02);
         }
 
-        button:disabled {
+        #send-btn:disabled {
             opacity: 0.5;
             cursor: not-allowed;
             transform: none;
@@ -210,26 +220,36 @@
             border-radius: 0.25rem;
             color: var(--text-color);
         }
+
+        #model-info {
+            font-size: 0.8rem;
+            color: var(--text-muted);
+            opacity: 0.7;
+        }
     </style>
 </head>
 <body>
     <header>
-        <h1>🦙 nanollama</h1>
-        <p>Llama 3 architecture • Trained from scratch</p>
+        <div style="width: 80px;"></div>
+        <div class="title">
+            <h1>nanollama</h1>
+            <p>Llama 3 from scratch</p>
+        </div>
+        <button id="clear-btn" onclick="clearChat()">Clear</button>
     </header>
 
     <div class="chat-container" id="chat-container">
         <div class="message assistant">
-            <div class="role">🦙 nanollama</div>
-            <div class="content">Hello! I'm nanollama, a Llama 3 model trained from scratch. How can I help you today?</div>
+            <div class="role">nanollama</div>
+            <div class="content">Ready.</div>
         </div>
     </div>
 
     <div class="settings">
         <label>
-            Temperature:
-            <input type="range" id="temperature" min="0" max="2" step="0.1" value="0.7">
-            <span id="temp-value">0.7</span>
+            Temp:
+            <input type="range" id="temperature" min="0" max="2" step="0.1" value="0.8">
+            <span id="temp-value">0.8</span>
         </label>
         <label>
             Max tokens:
@@ -237,8 +257,9 @@
         </label>
         <label>
             Top-k:
-            <input type="number" id="top-k" min="1" max="100" value="40">
+            <input type="number" id="top-k" min="1" max="100" value="50">
         </label>
+        <span id="model-info"></span>
     </div>
 
     <div class="input-container">
@@ -268,19 +289,23 @@
             }
         });
 
+        // Load model info on startup
+        fetch('/health').then(r => r.json()).then(data => {
+            document.getElementById('model-info').textContent =
+                `${data.params_millions}M params | ${data.layers}L ${data.dim}D` +
+                (data.gamma_loaded ? ' | +gamma' : '');
+        }).catch(() => {});
+
         function addMessage(role, content) {
             const messageDiv = document.createElement('div');
             messageDiv.className = `message ${role}`;
-            
-            const roleLabel = role === 'user' ? '👤 You' : '🦙 nanollama';
+            const roleLabel = role === 'user' ? 'You' : 'nanollama';
             messageDiv.innerHTML = `
                 <div class="role">${roleLabel}</div>
                 <div class="content">${escapeHtml(content)}</div>
             `;
-            
             chatContainer.appendChild(messageDiv);
             chatContainer.scrollTop = chatContainer.scrollHeight;
-            
             return messageDiv;
         }
 
@@ -289,7 +314,7 @@
             indicator.className = 'message assistant';
             indicator.id = 'typing-indicator';
             indicator.innerHTML = `
-                <div class="role">🦙 nanollama</div>
+                <div class="role">nanollama</div>
                 <div class="typing-indicator">
                     <span></span><span></span><span></span>
                 </div>
@@ -307,6 +332,12 @@
             const div = document.createElement('div');
             div.textContent = text;
             return div.innerHTML;
+        }
+
+        function clearChat() {
+            conversationHistory = [];
+            chatContainer.innerHTML = '';
+            addMessage('assistant', 'Ready.');
         }
 
         async function sendMessage() {
@@ -335,25 +366,22 @@
 
                 hideTypingIndicator();
 
-                if (!response.ok) {
-                    throw new Error('Network response was not ok');
-                }
+                if (!response.ok) throw new Error('Request failed');
 
                 const data = await response.json();
-                const assistantMessage = data.response;
-
-                addMessage('assistant', assistantMessage);
-                conversationHistory.push({ role: 'assistant', content: assistantMessage });
+                addMessage('assistant', data.response);
+                conversationHistory.push({ role: 'assistant', content: data.response });
 
             } catch (error) {
                 hideTypingIndicator();
-                addMessage('assistant', 'Sorry, there was an error processing your request.');
-                console.error('Error:', error);
+                addMessage('assistant', 'Error: ' + error.message);
             }
 
             sendBtn.disabled = false;
             userInput.focus();
         }
+
+        userInput.focus();
     </script>
 </body>
 </html>

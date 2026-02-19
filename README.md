@@ -118,7 +118,8 @@ The `go/` directory contains a standalone, zero-dependency inference engine in p
 - **Gamma injection** — loads sparse NPZ, applies at embedding lookup
 - **nanollama flags** — QK-norm and conjugate RoPE auto-detected from GGUF metadata
 - **Streaming output** — tokens printed as they're generated
-- **3.5 MB binary** — compiles to a single static binary, no shared libs
+- **Built-in web UI** — `--serve` flag starts HTTP chat server, zero extra deps
+- **Single binary** — compiles to one static binary, no shared libs
 
 ### Build & Run
 
@@ -134,6 +135,10 @@ go build -o nanollama .
 
 # With personality
 ./nanollama --model ../weights/model.gguf --gamma ../weights/gamma.npz --interactive
+
+# Web chat UI
+./nanollama --model ../weights/model.gguf --serve --port 8080
+# Open http://localhost:8080
 
 # Debug: list tensors
 ./nanollama --model ../weights/model.gguf --list-tensors
@@ -233,6 +238,8 @@ nanollama/
 │   ├── main.go          # CLI: load GGUF, generate, REPL
 │   ├── gguf.go          # GGUF v3 parser (all types)
 │   ├── model.go         # Llama forward pass (GQA, RoPE, SwiGLU)
+│   ├── serve.go         # HTTP chat server (embedded web UI)
+│   ├── ui.html          # Chat web interface (go:embed)
 │   ├── quant.go         # F32/F16/Q4_0/Q5_0/Q8_0/Q4_K/Q6_K matmul
 │   ├── tokenizer.go     # BPE tokenizer (SentencePiece + GPT-2)
 │   ├── gamma.go         # Gamma essence loader (sparse NPZ)

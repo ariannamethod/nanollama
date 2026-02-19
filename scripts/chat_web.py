@@ -41,7 +41,7 @@ def parse_args():
 @app.get("/", response_class=HTMLResponse)
 async def get_ui():
     """Serve the chat UI."""
-    ui_path = Path(__file__).parent.parent / "nanollama" / "ui.html"
+    ui_path = Path(__file__).parent.parent / "go" / "ui.html"
     with open(ui_path, 'r') as f:
         return f.read()
 

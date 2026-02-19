@@ -33,6 +33,8 @@ func main() {
 	repPenalty := flag.Float64("rep-penalty", 1.15, "Repetition penalty (1.0 = disabled)")
 	repWindow := flag.Int("rep-window", 64, "Repetition penalty lookback window")
 	interactive := flag.Bool("interactive", false, "Interactive REPL mode")
+	serve := flag.Bool("serve", false, "Start HTTP chat server")
+	port := flag.Int("port", 8080, "HTTP server port (used with --serve)")
 	listTensors := flag.Bool("list-tensors", false, "List all tensors and exit")
 	flag.Parse()
 
@@ -102,7 +104,9 @@ func main() {
 	fmt.Printf("[nanollama] ready — %dM params, %d layers, %d dim\n",
 		estimateParams(model)/1_000_000, model.Config.NumLayers, model.Config.EmbedDim)
 
-	if *interactive {
+	if *serve {
+		runServer(engine, params, *port)
+	} else if *interactive {
 		runREPL(engine, params)
 	} else if *prompt != "" {
 		result := engine.Generate(*prompt, params)
@@ -220,6 +224,67 @@ func (e *Engine) Generate(prompt string, p GenParams) string {
 	if elapsed.Seconds() > 0 && tokensGen > 0 {
 		tps := float64(tokensGen) / elapsed.Seconds()
 		fmt.Printf("[%d tokens, %.1f tok/s]\n", tokensGen, tps)
+	}
+
+	return string(output)
+}
+
+// GenerateQuiet produces text without streaming to stdout (for HTTP API)
+func (e *Engine) GenerateQuiet(prompt string, p GenParams) string {
+	tokens := e.tokenizer.Encode(prompt, true)
+	e.model.Reset()
+
+	pos := 0
+	for _, tok := range tokens {
+		e.model.Forward(tok, pos)
+		pos++
+		if pos >= e.model.Config.SeqLen-1 {
+			break
+		}
+	}
+
+	var output []byte
+	recentTokens := make([]int, 0, e.repWindow)
+
+	for i := 0; i < p.MaxTokens && len(output) < 8192; i++ {
+		logits := e.model.State.Logits
+
+		if e.repPenalty > 1.0 && len(recentTokens) > 0 {
+			for _, tok := range recentTokens {
+				if tok >= 0 && tok < e.model.Config.VocabSize {
+					if logits[tok] > 0 {
+						logits[tok] /= e.repPenalty
+					} else {
+						logits[tok] *= e.repPenalty
+					}
+				}
+			}
+		}
+
+		var next int
+		if p.TopP < 1.0 {
+			next = e.sampleTopP(p.Temperature, p.TopP)
+		} else {
+			next = e.sampleTopK(p.Temperature, p.TopK)
+		}
+
+		recentTokens = append(recentTokens, next)
+		if len(recentTokens) > e.repWindow {
+			recentTokens = recentTokens[1:]
+		}
+
+		if next == e.tokenizer.EosID {
+			break
+		}
+
+		piece := e.tokenizer.DecodeToken(next)
+		output = append(output, []byte(piece)...)
+
+		e.model.Forward(next, pos)
+		pos++
+		if pos >= e.model.Config.SeqLen {
+			break
+		}
 	}
 
 	return string(output)
