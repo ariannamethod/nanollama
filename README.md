@@ -1,161 +1,188 @@
 # nanollama
 
-Train Llama 3 models from scratch. Any scale, any personality.
+> Train Llama 3 models from scratch. Any scale, any personality. No PyTorch at inference. No wrapping existing weights.
+
+**Status: beta — actively tested on Lambda Cloud (A100). Do not use H100 instances (driver bug Error 802 as of Feb 2026).**
+
+---
 
 ## What This Is
 
-A complete framework for training Llama 3 architecture models from raw text. Not fine-tuning, not wrapping Meta weights — building new models from zero. Data prep, pretraining, personality extraction, GGUF export, and a standalone Go inference engine. One repo, full pipeline.
+nanollama is a complete, self-contained framework for training Llama 3 architecture models from raw text — not fine-tuning, not adapter wrapping, not LoRA on top of Meta weights. Ground zero. Your data, your model, your personality.
 
-Nothing else does this. llama.cpp is inference only. HuggingFace transformers wraps existing models. Karpathy's nanoGPT/nanochat trains GPT-2. There is no public framework that trains real Llama 3 models from scratch with a built-in inference engine and personality injection pipeline.
+The full pipeline in one repo:
 
-nanollama fills that gap.
+- Data preparation (FineWeb-Edu, custom corpora, personality JSONL)
+- Pretraining from scratch (Python + Muon optimizer)
+- Personality extraction and injection (γ = θ − ε)
+- GGUF v3 export (llama.cpp compatible)
+- Standalone Go inference engine (zero external dependencies, 9MB binary)
 
-Originally forked from [nanochat](https://github.com/karpathy/nanochat). Now a different project — Llama 3 instead of GPT-2, learnable RMSNorm, GGUF v3 export, Go inference engine, personality extraction/injection (γ), configs from 34M to 3.7B.
+### Why This Exists
+
+| Tool | What it does | What it can't do |
+|------|-------------|-----------------|
+| llama.cpp | Inference on existing models | Training |
+| HuggingFace transformers | Fine-tune existing models | Train from scratch cleanly |
+| Karpathy's nanoGPT / nanochat | Train GPT-2 architecture | Llama 3, GQA, RoPE, personality injection |
+| **nanollama** | **Full Llama 3 pipeline from zero** | — |
+
+nanollama fills the gap. Originally forked from [nanochat](https://github.com/karpathy/nanochat) — Karpathy's work lives in `legacy/` with full credit. The training scripts, model architecture, optimizer, inference engine, personality system, and GGUF exporter are our own.
+
+---
 
 ## Quick Start
 
 ```bash
-# Train a 69M model from scratch
+# Install
 pip install .
+
+# Train a 69M Llama 3 model from scratch
 python -m scripts.base_train --depth 12
 
-# Export to GGUF
+# Export to GGUF (llama.cpp compatible)
 python -m scripts.export_gguf \
-    --checkpoint checkpoints/base/checkpoint.pt \
-    --tokenizer weights/tokenizer.model \
-    --output weights/model.gguf --dtype f16
+  --checkpoint checkpoints/base/checkpoint.pt \
+  --tokenizer weights/tokenizer.model \
+  --output weights/model.gguf --dtype f16
 
-# Inference (Go, zero dependencies)
+# Inference — pure Go, zero dependencies
 cd go && go build -o nanollama .
 ./nanollama --model ../weights/model.gguf --interactive
 ```
 
-## The `--depth` Parameter
+---
 
-One dial controls everything. Set `--depth` (number of transformer layers) and width, heads, KV heads, FFN dim are calculated automatically.
+## The --depth Parameter
+
+One dial controls everything. Set `--depth` and all other dimensions are derived automatically.
 
 | Name | Depth | Width | Heads | KV | FFN | Params | GPU | Time | Data |
 |------|-------|-------|-------|----|-----|--------|-----|------|------|
-| nano | 6 | 384 | 6 | 2 | 768 | 34M | Any | ~20 min | 200K samples |
-| micro | 12 | 512 | 8 | 2 | 1536 | 69M | 1× A100 | ~40 min | 500K samples |
-| mini | 16 | 768 | 12 | 4 | 2304 | 150M | 1× A100 | ~3 hrs | 1M samples |
-| small | 24 | 1024 | 16 | 4 | 3072 | 336M | 1× A100 | ~18 hrs | 3M samples |
-| medium | 28 | 2048 | 32 | 8 | 6144 | 1.6B | 4× A100 | ~48 hrs | 10M samples |
-| large | 32 | 3200 | 32 | 8 | 9728 | 3.7B | 8× A100 | ~96 hrs | 10M samples |
+| nano | 6 | 384 | 6 | 2 | 768 | 34M | Any | ~20 min | 200K |
+| micro | 12 | 512 | 8 | 2 | 1536 | 69M | 1× A100 | ~40 min | 500K |
+| mini | 16 | 768 | 12 | 4 | 2304 | 150M | 1× A100 | ~3 hrs | 1M |
+| small | 24 | 1024 | 16 | 4 | 3072 | 336M | 1× A100 | ~18 hrs | 3M |
+| medium | 28 | 2048 | 32 | 8 | 6144 | 1.6B | 4× A100 | ~48 hrs | 10M |
+| large | 32 | 3200 | 32 | 8 | 9728 | 3.7B | 8× A100 | ~96 hrs | 10M |
 
-Data = recommended FineWeb-Edu samples for `prepare_fineweb`. FFN dim = `round_up(2 * 4 * n_embd / 3, 256)`.
+FFN dim = round_up(2 × 4 × n_embd / 3, 256). Data = recommended FineWeb-Edu samples.
+
+---
 
 ## Architecture
 
-Real Llama 3, not an approximation:
+Real Llama 3, not an approximation.
 
-1. **Learnable RMSNorm** — `RMSNorm(x) = x / RMS(x) * scale` with learned per-channel weight vector. llama.cpp compatible GGUF output.
+**Learnable RMSNorm** — `RMSNorm(x) = x / RMS(x) * scale` with a learned per-channel weight vector. Standard RMSNorm has no learnable scale — ours does.
 
-2. **QK-norm** — Parameterless RMS normalization of Q and K per-head after RoPE. Stabilizes attention logits at depth.
+**QK-norm** — Parameterless RMS normalization of Q and K per-head after RoPE. Stabilizes attention logits at depth without adding parameters.
 
-3. **Conjugate RoPE** — Uses the complex conjugate rotation convention. Inference engine auto-detects from GGUF metadata.
+**Conjugate RoPE** — Uses the complex conjugate rotation convention. The Go inference engine auto-detects the flag from GGUF metadata and applies the matching rotation.
 
-4. **GQA** — Grouped query attention. Fewer KV heads than query heads (8Q/2KV for micro, 12Q/4KV for mini).
+**GQA** — Grouped query attention. Fewer KV heads than query heads (8Q/2KV for micro, 12Q/4KV for mini). Full KV cache during inference.
 
-5. **SwiGLU MLP** — `down(silu(gate(x)) * up(x))`. Three projections per layer, 2/3 ratio FFN.
+**SwiGLU MLP** — `down(silu(gate(x)) * up(x))`. Three projections per layer, 2/3 FFN ratio.
 
-Other: RoPE θ=500000, pre-norm, no bias, untied embeddings, Z-loss, WSD learning rate schedule (warmup-stable-decay). Optimizer: Muon + AdamW (matrices on Muon, embeddings and norms on AdamW). Model definition: `nanollama/llama.py` (~300 lines).
+**Other**: RoPE θ=500000, pre-norm, no bias, untied embeddings, Z-loss regularization, WSD learning rate schedule (warmup → stable → decay).
+
+**Optimizer**: Muon for weight matrices + AdamW for embeddings and norms.
+
+Model definition: `nanollama/llama.py` (~300 lines).
+
+---
 
 ## Personality Injection (θ = ε + γ)
+
+The soul formula, applied at training time.
 
 Train two models on the same data — one base (ε), one with personality text mixed in (θ). The weight difference is the personality:
 
 ```
-γ = θ - ε           (extract personality)
-θ_new = ε_new + γ   (inject into any base model)
+γ = θ − ε          # extract personality
+θ_new = ε_new + γ  # inject into any base model
 ```
 
-Gamma is a sparse NPZ file. At inference, the engine applies `embed[token] += γ[token]` before the forward pass. Portable across model scales.
+Gamma is a sparse NPZ file. At inference, the Go engine applies `embed[token] += γ[token]` before the forward pass. Personality is portable across model scales — extract from a 69M, inject into a 336M.
 
-### One-command pipeline
+### Full Pipeline
 
 ```bash
-# Train base + personality + extract gamma + export GGUF
+# One command on Lambda Cloud
 bash runs/lambda_train.sh --name mini --personality my_data.jsonl
-```
 
-Or step by step:
+# Or step by step:
 
-```bash
-# 1. Train base (no personality)
+# 1. Train base
 python -m scripts.base_train --depth 16 --model-tag base --personality-ratio 0.0
 
-# 2. Train with personality (20% mixed in)
+# 2. Train with personality (20% mixed into batches)
 python -m scripts.base_train --depth 16 --model-tag personality \
-    --personality-dir data/personality/ --personality-ratio 0.2
+  --personality-dir data/personality/ --personality-ratio 0.2
 
 # 3. Extract gamma
 python -m scripts.extract_gamma \
-    --personality_ckpt checkpoints/personality/checkpoint.pt \
-    --base_ckpt checkpoints/base/checkpoint.pt \
-    --output weights/gamma.npz
+  --personality_ckpt checkpoints/personality/checkpoint.pt \
+  --base_ckpt checkpoints/base/checkpoint.pt \
+  --output weights/gamma.npz
 
 # 4. Export GGUF
 python -m scripts.export_gguf \
-    --checkpoint checkpoints/personality/checkpoint.pt \
-    --tokenizer weights/tokenizer.model \
-    --output weights/model.gguf --dtype f16
+  --checkpoint checkpoints/personality/checkpoint.pt \
+  --tokenizer weights/tokenizer.model \
+  --output weights/model.gguf --dtype f16
 
-# 5. Inference with gamma
-cd go && go build -o nanollama .
-./nanollama --model ../weights/model.gguf --gamma ../weights/gamma.npz --interactive
+# 5. Run with personality
+cd go && ./nanollama --model ../weights/model.gguf --gamma ../weights/gamma.npz --interactive
 ```
+
+---
 
 ## Go Inference Engine
 
-Standalone, zero-dependency inference in pure Go. Loads GGUF files and runs the full Llama forward pass. Compiles to a single 9MB binary.
-
-### Features
-
-- **GGUF v3 parser** — reads all metadata, tensors, and embedded tokenizer
-- **7 quantization formats** — F32, F16, Q4_0, Q5_0, Q8_0, Q4_K, Q6_K
-- **Parallel matmul** — goroutines across all CPU cores
-- **BPE tokenizer** — SentencePiece and GPT-2/Qwen modes
-- **Gamma injection** — loads sparse NPZ, applies at embedding lookup
-- **Built-in web UI** — `--serve` starts HTTP chat server
-- **Auto-detection** — QK-norm and conjugate RoPE flags read from GGUF metadata
-- **Works with standard GGUF** — loads Llama/Qwen models from llama.cpp too
-
-### Usage
+Standalone inference in pure Go. No Python, no PyTorch, no CUDA at runtime. Compiles to a single ~9MB binary.
 
 ```bash
 cd go && go build -o nanollama .
 
-./nanollama --model weights/model.gguf --interactive          # REPL
-./nanollama --model weights/model.gguf --prompt "Hello"       # one-shot
-./nanollama --model weights/model.gguf --gamma weights/g.npz  # + personality
-./nanollama --model weights/model.gguf --serve --port 8080    # web chat
-./nanollama --model weights/model.gguf --list-tensors         # debug
+./nanollama --model weights/model.gguf --interactive       # REPL
+./nanollama --model weights/model.gguf --prompt "Hello"    # one-shot
+./nanollama --model weights/model.gguf --gamma g.npz       # with personality
+./nanollama --model weights/model.gguf --serve --port 8080 # web chat UI
+./nanollama --model weights/model.gguf --list-tensors      # debug
 ```
 
-### Sampling
+**Features:**
+- GGUF v3 parser — all metadata, tensors, embedded tokenizer
+- 7 quantization formats — F32, F16, Q4_0, Q5_0, Q8_0, Q4_K, Q6_K
+- Parallel matmul — goroutines across all CPU cores
+- BPE tokenizer — SentencePiece and GPT-2/Qwen modes
+- Gamma injection — sparse NPZ loaded and applied at embedding lookup
+- Built-in web UI — `--serve` starts HTTP chat server
+- Auto-detection — QK-norm and conjugate RoPE flags read from GGUF metadata
+- Works with any standard GGUF — loads Llama/Qwen models from llama.cpp
+
+**Sampling flags:**
 
 | Flag | Default | Description |
 |------|---------|-------------|
 | `--temp` | 0.8 | Temperature (0 = greedy) |
-| `--top-p` | 0.9 | Nucleus sampling threshold |
-| `--top-k` | 50 | Top-k (used when top-p >= 1.0) |
+| `--top-p` | 0.9 | Nucleus sampling |
+| `--top-k` | 50 | Top-k (when top-p ≥ 1.0) |
 | `--rep-penalty` | 1.15 | Repetition penalty |
-| `--rep-window` | 64 | Lookback window for rep penalty |
+| `--rep-window` | 64 | Lookback window |
 | `--max-tokens` | 256 | Max tokens to generate |
 
-### Performance
+**Performance (MacBook Pro 2019, 8GB Intel):**
+- 69M micro, F16: ~10 tok/s
+- 150M mini, F16: ~4 tok/s
 
-MacBook Pro 2019 (8GB, Intel):
-- 69M (micro): ~10 tok/s F16
-- 150M (mini): ~4 tok/s F16
+---
 
 ## Lambda Cloud
 
-Universal training script for any model size:
-
 ```bash
-# Setup
+# One-time setup
 bash runs/lambda_setup.sh
 
 # Train any size
@@ -164,77 +191,76 @@ bash runs/lambda_train.sh --name mini --personality data.jsonl
 bash runs/lambda_train.sh --name small --steps 10000 --samples 2000000
 ```
 
-Avoid H100 instances (driver bug Error 802 as of Feb 2026). Use A100.
+> **Note:** Avoid H100 instances — driver bug (Error 802) confirmed as of Feb 2026. Use A100.
 
-## GGUF Format
+---
 
-The converter produces llama.cpp compatible GGUF v3 files.
+## GGUF Export
 
-```
-nanollama checkpoint              → GGUF tensor name
-──────────────────────────────────────────────────────
-tok_embeddings.weight             → token_embd.weight
-layers.N.attn_norm.weight         → blk.N.attn_norm.weight    (F32)
-layers.N.attn.c_q.weight          → blk.N.attn_q.weight
-layers.N.attn.c_k.weight          → blk.N.attn_k.weight
-layers.N.attn.c_v.weight          → blk.N.attn_v.weight
-layers.N.attn.c_proj.weight       → blk.N.attn_output.weight
-layers.N.ffn_norm.weight          → blk.N.ffn_norm.weight     (F32)
-layers.N.ffn.gate_proj.weight     → blk.N.ffn_gate.weight
-layers.N.ffn.up_proj.weight       → blk.N.ffn_up.weight
-layers.N.ffn.down_proj.weight     → blk.N.ffn_down.weight
-norm.weight                       → output_norm.weight         (F32)
-output.weight                     → output.weight
-```
-
-Norms stored as F32 (llama.cpp standard). Matrices use `--dtype` (F16 default). Tokenizer embedded in GGUF via `tokenizer.ggml.*` metadata arrays — no external files needed.
+Produces llama.cpp-compatible GGUF v3 files. Norms stored as F32 (llama.cpp standard), matrices in `--dtype` (F16 default). Tokenizer embedded in GGUF — no external files needed at inference.
 
 Custom metadata flags for the Go engine:
 ```
-nanollama.qk_norm = true       ← apply RMSNorm to Q,K per-head after RoPE
-nanollama.rope_conjugate = true ← use conjugate RoPE rotation
+nanollama.qk_norm = true         # apply RMSNorm to Q,K per-head after RoPE
+nanollama.rope_conjugate = true  # use conjugate RoPE rotation
 ```
+
+---
 
 ## Project Structure
 
 ```
 nanollama/
 ├── nanollama/
-│   ├── llama.py         # Llama 3 model (~300 lines)
-│   ├── engine.py        # Python inference with GQA KV cache
-│   ├── tokenizer.py     # SentencePiece wrapper
-│   ├── dataloader.py    # Distributed loader + personality mixing
-│   └── optim.py         # Muon + AdamW
+│   ├── llama.py          # Llama 3 model (~300 lines)
+│   ├── engine.py         # Python inference with GQA KV cache
+│   ├── tokenizer.py      # SentencePiece wrapper
+│   ├── dataloader.py     # Distributed loader + personality mixing
+│   └── optim.py          # Muon + AdamW
 ├── go/
-│   ├── main.go          # CLI: load GGUF, generate, REPL, HTTP server
-│   ├── gguf.go          # GGUF v3 parser
-│   ├── model.go         # Llama forward pass (GQA, RoPE, SwiGLU)
-│   ├── serve.go         # HTTP chat server (embedded web UI)
-│   ├── quant.go         # F32/F16/Q4_0/Q5_0/Q8_0/Q4_K/Q6_K
-│   ├── tokenizer.go     # BPE tokenizer (SentencePiece + GPT-2)
-│   ├── gamma.go         # Gamma loader (sparse NPZ)
-│   └── ui.html          # Chat web interface (go:embed)
+│   ├── main.go           # CLI: load GGUF, generate, REPL, HTTP server
+│   ├── gguf.go           # GGUF v3 parser
+│   ├── model.go          # Llama forward pass (GQA, RoPE, SwiGLU)
+│   ├── serve.go          # HTTP chat server (embedded web UI)
+│   ├── quant.go          # F32/F16/Q4_0/Q5_0/Q8_0/Q4_K/Q6_K
+│   ├── tokenizer.go      # BPE tokenizer (SentencePiece + GPT-2)
+│   ├── gamma.go          # Gamma loader (sparse NPZ)
+│   └── ui.html           # Chat UI (go:embed)
 ├── scripts/
-│   ├── base_train.py    # Pretrain from scratch
-│   ├── export_gguf.py   # PyTorch → GGUF converter
-│   ├── extract_gamma.py # Gamma extraction (θ - ε)
-│   └── inject_gamma.py  # Gamma injection into checkpoint
+│   ├── base_train.py     # Pretrain from scratch
+│   ├── export_gguf.py    # PyTorch → GGUF converter
+│   ├── extract_gamma.py  # Gamma extraction (θ − ε)
+│   └── inject_gamma.py   # Gamma injection into checkpoint
 ├── data/
-│   ├── prepare_fineweb.py      # FineWeb-Edu download + tokenize
-│   └── prepare_personality.py  # Personality JSONL → binary shard
-├── config/              # Model size configs with RECOMMENDED_SAMPLES
-├── runs/                # Lambda Cloud scripts (lambda_train.sh)
-├── weights/             # GGUF files, gammas, tokenizer
-├── tests/               # Unit tests
-└── legacy/              # Old PyTorch inference
+│   ├── prepare_fineweb.py       # FineWeb-Edu download + tokenize
+│   └── prepare_personality.py   # Personality JSONL → binary shard
+├── config/               # Model size configs
+├── runs/                 # Lambda Cloud scripts
+├── weights/              # GGUF files, gammas, tokenizer
+├── tests/                # Unit tests
+└── legacy/               # Karpathy's original nanochat (reference)
 ```
+
+---
 
 ## Dependencies
 
-**Training**: PyTorch >= 2.4.0, SentencePiece, numpy.
+**Training:** PyTorch >= 2.4.0, SentencePiece, numpy
 
-**Inference**: Go 1.21+ (zero external dependencies).
+**Inference:** Go 1.21+ — zero external dependencies
+
+---
+
+## Credits
+
+Forked from [karpathy/nanochat](https://github.com/karpathy/nanochat). Karpathy's original code is preserved in `legacy/` — the clean GPT-2 training loop was the starting point. Everything else — Llama 3 architecture, GQA, learnable RMSNorm, QK-norm, conjugate RoPE, Muon optimizer, personality injection, GGUF exporter, Go inference engine — is original work by the [Arianna Method](https://github.com/ariannamethod) team.
+
+---
 
 ## License
 
-GPLv3
+GPLv3. See [LICENSE](LICENSE).
+
+---
+
+*Part of the [Arianna Method](https://github.com/ariannamethod) ecosystem.*
