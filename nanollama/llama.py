@@ -49,7 +49,19 @@ def get_config_for_depth(depth: int) -> LlamaConfig:
     return LlamaConfig(n_layer=depth, n_embd=n_embd, n_head=n_head, n_kv_head=n_kv_head)
 
 def rms_norm(x: torch.Tensor, eps: float = 1e-5) -> torch.Tensor:
+    """Parameterless RMS norm — used only for QK-norm (standard in Llama 3)."""
     return x * torch.rsqrt(x.pow(2).mean(-1, keepdim=True) + eps)
+
+
+class RMSNorm(nn.Module):
+    """RMSNorm with learnable scale — standard Llama 3, llama.cpp compatible."""
+    def __init__(self, dim: int, eps: float = 1e-5):
+        super().__init__()
+        self.eps = eps
+        self.weight = nn.Parameter(torch.ones(dim))
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return x * torch.rsqrt(x.pow(2).mean(-1, keepdim=True) + self.eps) * self.weight
 
 def precompute_freqs_cis(dim: int, seq_len: int, theta: float = 500000.0,
                           device: Optional[torch.device] = None) -> Tuple[torch.Tensor, torch.Tensor]:
@@ -143,17 +155,18 @@ class SwiGLUFFN(nn.Module):
 
 class TransformerBlock(nn.Module):
     """Pre-norm transformer block: norm→attn→residual, norm→ffn→residual"""
-    
+
     def __init__(self, config: LlamaConfig, layer_idx: int):
         super().__init__()
-        self.norm_eps = config.norm_eps
+        self.attn_norm = RMSNorm(config.n_embd, config.norm_eps)
+        self.ffn_norm = RMSNorm(config.n_embd, config.norm_eps)
         self.attn = CausalSelfAttention(config, layer_idx)
         self.ffn = SwiGLUFFN(config)
-    
+
     def forward(self, x: torch.Tensor, cos_sin: Tuple[torch.Tensor, torch.Tensor],
                 window_size: Tuple[int, int], kv_cache=None) -> torch.Tensor:
-        x = x + self.attn(rms_norm(x, self.norm_eps), cos_sin, window_size, kv_cache)
-        x = x + self.ffn(rms_norm(x, self.norm_eps))
+        x = x + self.attn(self.attn_norm(x), cos_sin, window_size, kv_cache)
+        x = x + self.ffn(self.ffn_norm(x))
         return x
 
 
@@ -172,6 +185,7 @@ class Llama(nn.Module):
         
         self.tok_embeddings = nn.Embedding(padded_vocab, config.n_embd)
         self.layers = nn.ModuleList([TransformerBlock(config, i) for i in range(config.n_layer)])
+        self.norm = RMSNorm(config.n_embd, config.norm_eps)
         self.output = nn.Linear(config.n_embd, padded_vocab, bias=False)
         
         self.rotary_seq_len = config.sequence_len * 10
@@ -228,13 +242,24 @@ class Llama(nn.Module):
     def setup_optimizer(self, unembedding_lr=0.004, embedding_lr=0.2, matrix_lr=0.02,
                         weight_decay=0.0, adam_betas=(0.8, 0.95)):
         ddp, rank, local_rank, world_size = get_dist_info()
-        matrix_params = [p for l in self.layers for p in l.parameters()]
         scale = (self.config.n_embd / 768) ** -0.5
-        
+
+        # Separate 1D (norms) from 2D (matrices) in transformer layers
+        matrix_params = []
+        norm_params = list(self.norm.parameters())  # output norm
+        for layer in self.layers:
+            for p in layer.parameters():
+                if p.dim() == 1:
+                    norm_params.append(p)
+                else:
+                    matrix_params.append(p)
+
         param_groups = [
             dict(kind='adamw', params=list(self.output.parameters()), lr=unembedding_lr * scale,
                  betas=adam_betas, eps=1e-10, weight_decay=0.0),
             dict(kind='adamw', params=list(self.tok_embeddings.parameters()), lr=embedding_lr * scale,
+                 betas=adam_betas, eps=1e-10, weight_decay=0.0),
+            dict(kind='adamw', params=norm_params, lr=unembedding_lr * scale,
                  betas=adam_betas, eps=1e-10, weight_decay=0.0),
         ]
         for shape in sorted({p.shape for p in matrix_params}):
@@ -256,7 +281,7 @@ class Llama(nn.Module):
         x = self.tok_embeddings(idx)
         for i, layer in enumerate(self.layers):
             x = layer(x, cos_sin, self.window_sizes[i], kv_cache)
-        x = rms_norm(x, self.config.norm_eps)
+        x = self.norm(x)
         
         logits = self.output(x)[..., :self.config.vocab_size].float()
         

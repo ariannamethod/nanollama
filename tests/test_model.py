@@ -212,14 +212,20 @@ class TestParameterCount:
             config.n_embd * (config.n_kv_head * head_dim) +  # V
             config.n_embd * config.n_embd  # O
         )
-        
+
         # FFN: gate, up, down
         ffn_params = 3 * config.n_embd * hidden_dim
-        
-        layer_params = attn_params + ffn_params
+
+        # RMSNorm: attn_norm + ffn_norm (learnable scale)
+        norm_params = 2 * config.n_embd
+
+        layer_params = attn_params + ffn_params + norm_params
         total_layer_params = config.n_layer * layer_params
-        
-        return embed_params + unembed_params + total_layer_params
+
+        # Output norm
+        output_norm_params = config.n_embd
+
+        return embed_params + unembed_params + total_layer_params + output_norm_params
     
     @pytest.mark.parametrize("depth,expected_approx", [
         (6, 34_000_000),    # ~34M (actual: 34,013,184)

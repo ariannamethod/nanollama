@@ -3,25 +3,26 @@
 Convert nanollama checkpoint to GGUF format for Yent engine inference.
 
 nanollama → GGUF with full compatibility for the Yent Go inference engine.
-Handles all architectural differences:
-  1. Parameterless RMSNorm → injects identity (all-ones) norm weights
+GGUF output is llama.cpp compatible. Handles nanollama-specific features:
+  1. Learnable RMSNorm weights → stored as F32 (llama.cpp standard)
   2. QK-norm flag → metadata for engine to apply RMSNorm on Q/K after RoPE
   3. Conjugate RoPE flag → metadata for engine to use correct rotation convention
   4. SentencePiece tokenizer → embedded in GGUF for self-contained model file
+  5. Old checkpoints without norm weights → auto-injects identity (all-ones)
 
-Weight name mapping (nanollama → GGUF):
+Weight name mapping (nanollama → GGUF, llama.cpp compatible):
   tok_embeddings.weight         → token_embd.weight
+  layers.N.attn_norm.weight     → blk.N.attn_norm.weight   (F32)
   layers.N.attn.c_q.weight      → blk.N.attn_q.weight
   layers.N.attn.c_k.weight      → blk.N.attn_k.weight
   layers.N.attn.c_v.weight      → blk.N.attn_v.weight
   layers.N.attn.c_proj.weight   → blk.N.attn_output.weight
+  layers.N.ffn_norm.weight      → blk.N.ffn_norm.weight    (F32)
   layers.N.ffn.gate_proj.weight → blk.N.ffn_gate.weight
   layers.N.ffn.up_proj.weight   → blk.N.ffn_up.weight
   layers.N.ffn.down_proj.weight → blk.N.ffn_down.weight
+  norm.weight                   → output_norm.weight        (F32)
   output.weight                 → output.weight
-  (generated)                   → blk.N.attn_norm.weight  (all-ones, F32)
-  (generated)                   → blk.N.ffn_norm.weight   (all-ones, F32)
-  (generated)                   → output_norm.weight       (all-ones, F32)
 
 Usage:
     python scripts/export_gguf.py \\
@@ -229,9 +230,12 @@ class GGUFWriter:
 WEIGHT_MAP = {
     "tok_embeddings.weight": "token_embd.weight",
     "output.weight": "output.weight",
+    "norm.weight": "output_norm.weight",
 }
 
 LAYER_WEIGHT_MAP = {
+    "attn_norm.weight":     "attn_norm.weight",
+    "ffn_norm.weight":      "ffn_norm.weight",
     "attn.c_q.weight":      "attn_q.weight",
     "attn.c_k.weight":      "attn_k.weight",
     "attn.c_v.weight":      "attn_v.weight",
@@ -426,35 +430,33 @@ def main():
         writer.add_string("tokenizer.ggml.model", "llama")
         print("  Tokenizer: not embedded (load separately)")
 
+    # ── Inject missing norm weights for old checkpoints (backward compat) ──
+    has_norms = "norm.weight" in state or "layers.0.attn_norm.weight" in state
+    if not has_norms:
+        print(f"\n  Old checkpoint without learnable norms — injecting identity weights")
+        ones = torch.ones(n_embd, dtype=torch.float32)
+        state["norm.weight"] = ones
+        for i in range(n_layer):
+            state[f"layers.{i}.attn_norm.weight"] = ones
+            state[f"layers.{i}.ffn_norm.weight"] = ones
+
     # ── Convert weight tensors ──
     ggml_type = GGML_TYPE_F16 if args.dtype == "f16" else GGML_TYPE_F32
-    torch_dtype = torch.float16 if args.dtype == "f16" else torch.float32
 
     print(f"\nConverting weights to {args.dtype}...")
     converted = 0
     for name in sorted(state.keys()):
         tensor = state[name]
         gguf_name = map_name(name)
-        writer.add_tensor(gguf_name, tensor.float(), ggml_type)
+        # Norm weights are always F32 (standard for llama.cpp)
+        t_ggml = GGML_TYPE_F32 if tensor.dim() == 1 else ggml_type
+        writer.add_tensor(gguf_name, tensor.float(), t_ggml)
+        dtype_str = "F32" if t_ggml == GGML_TYPE_F32 else args.dtype.upper()
         shape_str = "x".join(str(d) for d in tensor.shape)
-        print(f"  {name:45s} → {gguf_name:35s}  [{shape_str}]")
+        print(f"  {name:45s} → {gguf_name:35s}  [{shape_str}] {dtype_str}")
         converted += 1
 
-    # ── Inject identity RMSNorm weights ──
-    print(f"\nInjecting identity norm weights (all-ones, F32)...")
-    ones = torch.ones(n_embd, dtype=torch.float32)
-
-    for i in range(n_layer):
-        writer.add_tensor(f"blk.{i}.attn_norm.weight", ones, GGML_TYPE_F32)
-        writer.add_tensor(f"blk.{i}.ffn_norm.weight", ones, GGML_TYPE_F32)
-        print(f"  blk.{i}.attn_norm.weight  [{n_embd}] = ones")
-        print(f"  blk.{i}.ffn_norm.weight   [{n_embd}] = ones")
-
-    writer.add_tensor("output_norm.weight", ones, GGML_TYPE_F32)
-    print(f"  output_norm.weight        [{n_embd}] = ones")
-
-    total_tensors = converted + n_layer * 2 + 1
-    print(f"\nTotal: {total_tensors} tensors ({converted} from checkpoint + {n_layer * 2 + 1} injected norms)")
+    print(f"\nTotal: {converted} tensors")
 
     # ── Write GGUF ──
     print(f"\nWriting GGUF...")
