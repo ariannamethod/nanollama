@@ -2,7 +2,7 @@
 
 Train Llama 3 models from scratch. Any scale, any personality.
 
-A complete from-scratch training framework for the Llama 3 architecture with a zero-dependency Go inference engine. Not a wrapper around Meta weights — trains new models from raw text using the real Llama 3 architecture: RoPE (θ=500K), GQA, SwiGLU, learnable RMSNorm, QK-norm.
+nanollama is a complete from-scratch training framework for the Llama 3 architecture with a zero-dependency Go inference engine. Not a wrapper around Meta weights — trains new models from raw text using the real Llama 3 architecture: RoPE (θ=500K), GQA, SwiGLU, learnable RMSNorm, QK-norm.
 
 Originally forked from [nanochat](https://github.com/karpathy/nanochat), now a different framework: Llama 3 instead of GPT-2, GGUF v3 exporter (llama.cpp compatible) + zero-dependency Go inference engine, personality extraction/injection pipeline (γ), multi-scale configs from 34M to 3.7B.
 
