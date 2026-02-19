@@ -33,7 +33,8 @@ NUM_STEPS = 20000
 
 # Data
 PERSONALITY_RATIO = 0.20
+RECOMMENDED_SAMPLES = 3_000_000  # ~750M tokens, 75 shards. 20K steps × 512K batch = 10.5B tokens
 
 # Hardware
 RECOMMENDED_GPU = "A100 80GB"
-ESTIMATED_TIME = "~18 hours on A100"
+ESTIMATED_TIME = "~18 hours on 1×A100"

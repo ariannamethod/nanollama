@@ -33,6 +33,7 @@ NUM_STEPS = 5000
 
 # Data
 PERSONALITY_RATIO = 0.20
+RECOMMENDED_SAMPLES = 500_000  # ~125M tokens, 12 shards. 5K steps × 128K batch = 655M tokens
 
 # Hardware
 RECOMMENDED_GPU = "RTX 3090 / A10 / A100"

@@ -41,6 +41,7 @@ NUM_STEPS = 1000
 
 # Data
 PERSONALITY_RATIO = 0.20
+RECOMMENDED_SAMPLES = 200_000  # ~50M tokens, 5 shards. Enough for 1K steps
 
 # Hardware
 RECOMMENDED_GPU = "Any GPU / CPU / MPS"
