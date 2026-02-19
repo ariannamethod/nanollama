@@ -42,23 +42,22 @@ if nvidia-smi --query-gpu=name --format=csv,noheader | grep -q "H100"; then
     echo ""
 fi
 
-# Setup if needed
-if [ ! -d "nanollama" ] && [ ! -f "setup.py" ]; then
+# Navigate to repo root
+if [ -f "pyproject.toml" ] && [ -d "nanollama" ]; then
+    echo "Already in nanollama repo"
+elif [ -d "nanollama" ] && [ -f "nanollama/pyproject.toml" ]; then
+    cd nanollama
+else
     echo "Cloning nanollama..."
     git clone https://github.com/ariannamethod/nanollama.git
     cd nanollama
-else
-    # Already in repo or repo exists
-    if [ -d "nanollama" ] && [ ! -f "setup.py" ]; then
-        cd nanollama
-    fi
 fi
 
+echo "Working directory: $(pwd)"
+
 # Install deps if needed
-if ! python -c "import nanollama" 2>/dev/null; then
-    echo "Installing dependencies..."
-    pip install -e . 2>/dev/null || pip install torch sentencepiece numpy tqdm
-fi
+pip install sentencepiece numpy tqdm datasets 2>/dev/null
+pip install . 2>/dev/null || true
 
 # ========================================
 # Step 1: Prepare FineWeb-Edu data
