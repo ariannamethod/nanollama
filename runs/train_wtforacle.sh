@@ -120,7 +120,6 @@ if [ "$NUM_GPUS" -gt 1 ]; then
         --personality-ratio=0.0 \
         --num-iterations=$NUM_STEPS \
         --save-every=1000 \
-        --wandb \
         2>&1 | tee train_base.log
 else
     echo "Single GPU training"
@@ -131,7 +130,6 @@ else
         --personality-ratio=0.0 \
         --num-iterations=$NUM_STEPS \
         --save-every=1000 \
-        --wandb \
         2>&1 | tee train_base.log
 fi
 
@@ -157,7 +155,6 @@ if [ "$NUM_GPUS" -gt 1 ]; then
         --personality-ratio=$PERSONALITY_RATIO \
         --num-iterations=$NUM_STEPS \
         --save-every=1000 \
-        --wandb \
         2>&1 | tee train_personality.log
 else
     python -u -m scripts.base_train \
@@ -168,7 +165,6 @@ else
         --personality-ratio=$PERSONALITY_RATIO \
         --num-iterations=$NUM_STEPS \
         --save-every=1000 \
-        --wandb \
         2>&1 | tee train_personality.log
 fi
 
@@ -189,7 +185,7 @@ GAMMA_OUTPUT="weights/gamma_wtforacle_d${DEPTH}.npz"
 
 mkdir -p weights
 
-python -u scripts/extract_gamma.py \
+python -u -m scripts.extract_gamma \
     --personality_ckpt "$PERSONALITY_CKPT" \
     --base_ckpt "$BASE_CKPT" \
     --output "$GAMMA_OUTPUT"
@@ -207,14 +203,14 @@ echo "========================================"
 TOKENIZER="$BASE_DIR/tokenizer/tokenizer.model"
 
 # Export personality model (main model)
-python -u scripts/export_gguf.py \
+python -u -m scripts.export_gguf \
     --checkpoint "$PERSONALITY_CKPT" \
     --tokenizer "$TOKENIZER" \
     --output "weights/wtforacle-mini-f16.gguf" \
     --dtype f16
 
 # Export base model too (for comparison)
-python -u scripts/export_gguf.py \
+python -u -m scripts.export_gguf \
     --checkpoint "$BASE_CKPT" \
     --tokenizer "$TOKENIZER" \
     --output "weights/mini-base-f16.gguf" \
