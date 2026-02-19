@@ -66,3 +66,12 @@ Thumbs.db
 # Temporary files
 tmp/
 *.tmp
+
+# Go binary
+go/nanollama
+
+# Weights directory (binary files)
+weights/*.gguf
+weights/*.pt
+weights/*.npz
+weights/*.model
