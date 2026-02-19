@@ -3,8 +3,8 @@ package main
 // model.go — LLaMA-family forward pass
 //
 // Llama 3 architecture with nanollama extensions:
-//   - Parameterless RMSNorm (identity weights injected in GGUF)
-//   - QK-norm: RMSNorm on Q,K after RoPE (stabilizes training)
+//   - Learnable RMSNorm with per-channel scale (llama.cpp compatible GGUF)
+//   - QK-norm: parameterless RMSNorm on Q,K after RoPE (stabilizes training)
 //   - Conjugate RoPE: (x0*cos+x1*sin, -x0*sin+x1*cos)
 //   - GQA (grouped query attention)
 //   - SwiGLU MLP
