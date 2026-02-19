@@ -1,5 +1,5 @@
 # nanollama
-
+   
 Train Llama 3 models from scratch. Any scale, any personality.
 
 A complete from-scratch training framework for the Llama 3 architecture with a zero-dependency Go inference engine. Not a wrapper around Meta weights — trains new models from raw text using the real Llama 3 architecture: RoPE (θ=500K), GQA, SwiGLU, learnable RMSNorm, QK-norm.
