@@ -4,7 +4,7 @@ Train Llama 3 models from scratch. Any scale, any personality.
 
 A complete from-scratch training framework for the Llama 3 architecture with a zero-dependency Go inference engine. Not a wrapper around Meta weights — trains new models from raw text using the real Llama 3 architecture: RoPE (θ=500K), GQA, SwiGLU, learnable RMSNorm, QK-norm.
 
-Originally forked from [nanochat](https://github.com/karpathy/nanochat), now a different framework: Llama 3 instead of GPT-2, own GGUF format (llama.cpp compatible), Go inference engine, personality extraction/injection pipeline (γ), multi-scale configs from 34M to 3.7B.
+Originally forked from [nanochat](https://github.com/karpathy/nanochat), now a different framework: Llama 3 instead of GPT-2, GGUF v3 exporter (llama.cpp compatible) + zero-dependency Go inference engine, personality extraction/injection pipeline (γ), multi-scale configs from 34M to 3.7B.
 
 ## Quick Start
 
@@ -43,7 +43,7 @@ FFN dim = SwiGLU intermediate size = `round_up(2 * 4 * n_embd / 3, 256)`.
 
 Real Llama 3, not an approximation. Every component matches the published architecture:
 
-1. **Learnable RMSNorm** — `RMSNorm(x) = x / RMS(x) * γ` where γ is a learned per-channel scale vector. Standard Llama 3, llama.cpp compatible GGUF output.
+1. **RMSNorm** — `RMSNorm(x) = x / RMS(x) * scale` where `scale` is a learned per-channel weight vector. Standard Llama 3, llama.cpp compatible GGUF output.
 
 2. **QK-norm** — After computing Q and K projections and applying RoPE, each head is RMS-normalized independently (parameterless). Stabilizes attention logits at large depths.
 

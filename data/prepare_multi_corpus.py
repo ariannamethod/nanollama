@@ -2,10 +2,10 @@
 Multi-corpus data preparation following SmolLM2 recipe.
 
 4 components, configurable ratios:
-  - FineWeb-Edu (60%): High-quality educational web text
-  - DCLM-Baseline (30%): Curated web corpus
+  - FineWeb-Edu (55%): High-quality educational web text
+  - DCLM-Baseline (25%): Curated web corpus
   - The Stack v2 (10%): Code (deduped, permissive licenses)
-  - MegaMath (bonus): Math reasoning data
+  - MegaMath (10%): Math reasoning data
 
 Each component is streamed, tokenized, and saved as shards.
 The dataloader mixes them at the specified ratios during training.
@@ -41,7 +41,7 @@ CORPUS_CONFIGS = {
         "subset": "sample-10BT",
         "split": "train",
         "text_field": "text",
-        "default_ratio": 0.60,
+        "default_ratio": 0.55,
         "description": "FineWeb-Edu: educational web text (5.4T tokens total)",
     },
     "dclm": {
@@ -49,7 +49,7 @@ CORPUS_CONFIGS = {
         "subset": None,
         "split": "train",
         "text_field": "text",
-        "default_ratio": 0.30,
+        "default_ratio": 0.25,
         "description": "DCLM-Baseline: curated web corpus (4T tokens total)",
     },
     "stack": {
@@ -65,7 +65,7 @@ CORPUS_CONFIGS = {
         "subset": None,
         "split": "train",
         "text_field": "text",
-        "default_ratio": 0.0,  # Bonus, not default
+        "default_ratio": 0.10,
         "description": "MegaMath: mathematical reasoning (371B tokens total)",
     },
 }
@@ -193,7 +193,7 @@ def main():
     )
     parser.add_argument("--total-tokens", type=str, default="100M",
                         help="Total tokens to prepare (e.g., 100M, 1B, 3B)")
-    parser.add_argument("--components", type=str, default="fineweb,dclm,stack",
+    parser.add_argument("--components", type=str, default="fineweb,dclm,stack,megamath",
                         help="Comma-separated component names")
     parser.add_argument("--ratios", type=str, default=None,
                         help="Comma-separated ratios (must match components count)")
