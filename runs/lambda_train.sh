@@ -40,6 +40,18 @@ declare -A CFG_TOKENS=(  [mini]="500M" [small]="1500M" [medium]="5000M" [large]=
 # Default corpus per size
 declare -A CFG_CORPUS=(  [nano]="fineweb" [micro]="fineweb" [mini]="multi" [small]="multi" [medium]="multi" [large]="multi" )
 
+# ---- TODO: Future pipeline stages ----
+# Mid-training (small+): Separate quality stage with reduced LR after base.
+#   SmolLM2 uses curated subset at 10x lower LR. Worth testing for small (336M+).
+#   Implementation: extra base_train.py call between base and personality,
+#   with --lr-max 0.002 and curated data (filtered CulturaX or SmolTalk).
+#
+# Multilingual (medium+): Requires 3 changes:
+#   1. New tokenizer trained on CulturaX (64K+ vocab instead of 32K English-only)
+#   2. Multilingual training corpus with temperature-based language sampling
+#   3. Mid-training on quality multilingual data
+#   CulturaX = 6.3T tokens, 167 languages. γ ⊥ δ proven — personality survives language switch.
+
 # ---- Parse arguments ----
 NAME=""
 PERSONALITY_FILE=""

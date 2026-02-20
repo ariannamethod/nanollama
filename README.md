@@ -68,6 +68,16 @@ One dial controls everything. Set `--depth` and all other dimensions are derived
 
 FFN dim = round_up(2 × 4 × n_embd / 3, 256). Tokens = recommended training corpus size. nano/micro use FineWeb-Edu only; mini+ use multi-corpus (SmolLM2 recipe).
 
+**Pipeline stages by size:**
+
+| Size | Base | Mid-training | Personality | Multilingual |
+|------|------|-------------|-------------|--------------|
+| nano–mini | multi-corpus | — | γ extraction | — |
+| small | multi-corpus | planned | γ extraction | — |
+| medium+ | multi-corpus | planned | γ extraction | planned (CulturaX, 64K+ vocab) |
+
+Mid-training = separate quality stage with reduced LR (SmolLM2 approach). Multilingual = new tokenizer + CulturaX (6.3T tokens, 167 languages). Both are TODO — current pipeline is base → personality for all sizes.
+
 ---
 
 ## Architecture
