@@ -1,6 +1,6 @@
 """
-Llama 3 model for nanollama. Clean, minimal implementation (~500 lines).
-RoPE, GQA, SwiGLU, RMSNorm, pre-norm, no bias, untied embeddings, no dropout.
+Llama 3 model for nanollama.
+RoPE, GQA/MHA, SwiGLU, RMSNorm, pre-norm, no bias, optional tied embeddings.
 """
 
 from contextlib import nullcontext
@@ -27,26 +27,47 @@ class LlamaConfig:
     multiple_of: int = 256
     window_pattern: str = "L"
     rope_theta: float = 500000.0  # Llama 3 uses 500000, NOT 10000 (Llama 2)
+    tie_embeddings: bool = False   # share tok_embeddings and output weights
+
+# Explicit named configs — calculated for optimal depth/width ratio per model size.
+# Design: deep-and-thin (MobileLLM insight), tied embeddings for small models,
+# head_dim=64, MHA for nano/micro, GQA for mini+.
+NAMED_CONFIGS = {
+    #  name      depth  dim   heads  kv_heads  tied     ~params
+    "nano":   (  12,   384,    6,      6,     True),  #  33.5M
+    "micro":  (  16,   512,    8,      8,     True),  #  70.9M
+    "mini":   (  20,   768,   12,      4,     True),  # 150.4M
+    "small":  (  24,  1024,   16,      4,    False),  # 338M
+    "goldie": (  22,  2048,   32,      8,    False),  # 1.1B
+    "medium": (  32,  2048,   32,      8,    False),  # 1.6B
+    "large":  (  36,  3072,   48,      8,    False),  # 3.7B
+    "big":    (  38,  4096,   64,     16,    False),  # 7.0B
+}
+
+def get_named_config(name: str) -> LlamaConfig:
+    """Get config for a named model size. Preferred over get_config_for_depth."""
+    if name not in NAMED_CONFIGS:
+        raise ValueError(f"Unknown model size '{name}'. Available: {list(NAMED_CONFIGS.keys())}")
+    depth, n_embd, n_head, n_kv_head, tied = NAMED_CONFIGS[name]
+    return LlamaConfig(n_layer=depth, n_embd=n_embd, n_head=n_head,
+                       n_kv_head=n_kv_head, tie_embeddings=tied)
 
 def get_config_for_depth(depth: int) -> LlamaConfig:
-    """Get Llama 3 config for depth. Scales width/heads automatically."""
-    if depth <= 6:
-        n_embd, n_head, n_kv_head = 384, 6, 2
-    elif depth <= 12:
-        n_embd, n_head, n_kv_head = 512, 8, 2
-    elif depth <= 16:
-        n_embd, n_head, n_kv_head = 768, 12, 4
-    elif depth <= 24:
-        n_embd, n_head, n_kv_head = 1024, 16, 4
-    elif depth <= 28:
-        n_embd, n_head, n_kv_head = 2048, 32, 8
-    elif depth <= 32:
-        n_embd, n_head, n_kv_head = 3200, 32, 8
+    """Fallback config from depth. Use get_named_config() for production training."""
+    n_embd = max(384, 64 * (depth * 48 // 64))  # ~48 per layer, rounded to 64
+    n_embd = 64 * (n_embd // 64)
+    n_head = n_embd // 64  # head_dim = 64
+    if n_embd <= 512:
+        n_kv_head = n_head  # MHA for small models
     else:
-        n_embd = min(4096, 256 * (depth // 4))
-        n_head = min(64, n_embd // 64)
+        # GQA: ensure n_head % n_kv_head == 0
         n_kv_head = max(4, n_head // 4)
-    return LlamaConfig(n_layer=depth, n_embd=n_embd, n_head=n_head, n_kv_head=n_kv_head)
+        while n_head % n_kv_head != 0:
+            n_kv_head -= 1
+        n_kv_head = max(1, n_kv_head)
+    tied = n_embd <= 768
+    return LlamaConfig(n_layer=depth, n_embd=n_embd, n_head=n_head,
+                       n_kv_head=n_kv_head, tie_embeddings=tied)
 
 def rms_norm(x: torch.Tensor, eps: float = 1e-5) -> torch.Tensor:
     """Parameterless RMS norm — used only for QK-norm (standard in Llama 3)."""
@@ -186,7 +207,10 @@ class Llama(nn.Module):
         self.tok_embeddings = nn.Embedding(padded_vocab, config.n_embd)
         self.layers = nn.ModuleList([TransformerBlock(config, i) for i in range(config.n_layer)])
         self.norm = RMSNorm(config.n_embd, config.norm_eps)
-        self.output = nn.Linear(config.n_embd, padded_vocab, bias=False)
+        if config.tie_embeddings:
+            self.output = None  # will use tok_embeddings.weight in forward
+        else:
+            self.output = nn.Linear(config.n_embd, padded_vocab, bias=False)
         
         self.rotary_seq_len = config.sequence_len * 10
         head_dim = config.n_embd // config.n_head
@@ -198,7 +222,8 @@ class Llama(nn.Module):
     def init_weights(self):
         """Initialize weights following Llama conventions."""
         nn.init.normal_(self.tok_embeddings.weight, mean=0.0, std=self.config.n_embd ** -0.5)
-        nn.init.normal_(self.output.weight, mean=0.0, std=0.001)
+        if self.output is not None:
+            nn.init.normal_(self.output.weight, mean=0.0, std=0.001)
         s = (3 ** 0.5) * (self.config.n_embd ** -0.5)
         for layer in self.layers:
             nn.init.uniform_(layer.attn.c_q.weight, -s, s)
@@ -228,16 +253,22 @@ class Llama(nn.Module):
         return self.tok_embeddings.weight.device
     
     def estimate_flops(self) -> int:
-        nparams = sum(p.numel() for p in self.parameters()) - self.tok_embeddings.weight.numel()
+        # Embedding lookup is free (row select, not matmul), so subtract its params.
+        # But with tied embeddings, the same weight IS used in output matmul — don't subtract.
+        if self.output is not None:
+            nparams = sum(p.numel() for p in self.parameters()) - self.tok_embeddings.weight.numel()
+        else:
+            nparams = sum(p.numel() for p in self.parameters())
         h, q, t = self.config.n_head, self.config.n_embd // self.config.n_head, self.config.sequence_len
         attn_flops = sum(12 * h * q * min(w[0], t) for w in self.window_sizes)
         return 6 * nparams + attn_flops
     
     def num_scaling_params(self) -> dict:
         tok = self.tok_embeddings.weight.numel()
-        out = self.output.weight.numel()
+        out = self.output.weight.numel() if self.output is not None else 0
         layers = sum(p.numel() for l in self.layers for p in l.parameters())
-        return {'tok_embeddings': tok, 'output': out, 'transformer_layers': layers, 'total': tok + out + layers}
+        return {'tok_embeddings': tok, 'output': out, 'transformer_layers': layers,
+                'total': tok + out + layers, 'tied': self.output is None}
     
     def setup_optimizer(self, unembedding_lr=0.004, embedding_lr=0.2, matrix_lr=0.02,
                         weight_decay=0.0, adam_betas=(0.8, 0.95)):
@@ -254,14 +285,19 @@ class Llama(nn.Module):
                 else:
                     matrix_params.append(p)
 
-        param_groups = [
-            dict(kind='adamw', params=list(self.output.parameters()), lr=unembedding_lr * scale,
-                 betas=adam_betas, eps=1e-10, weight_decay=0.0),
-            dict(kind='adamw', params=list(self.tok_embeddings.parameters()), lr=embedding_lr * scale,
-                 betas=adam_betas, eps=1e-10, weight_decay=0.0),
-            dict(kind='adamw', params=norm_params, lr=unembedding_lr * scale,
-                 betas=adam_betas, eps=1e-10, weight_decay=0.0),
-        ]
+        param_groups = []
+        if self.output is not None:
+            # Untied: separate groups for output and embedding
+            param_groups.append(dict(kind='adamw', params=list(self.output.parameters()),
+                                     lr=unembedding_lr * scale, betas=adam_betas, eps=1e-10, weight_decay=0.0))
+            param_groups.append(dict(kind='adamw', params=list(self.tok_embeddings.parameters()),
+                                     lr=embedding_lr * scale, betas=adam_betas, eps=1e-10, weight_decay=0.0))
+        else:
+            # Tied: embedding does double duty (input + output)
+            param_groups.append(dict(kind='adamw', params=list(self.tok_embeddings.parameters()),
+                                     lr=embedding_lr * scale, betas=adam_betas, eps=1e-10, weight_decay=0.0))
+        param_groups.append(dict(kind='adamw', params=norm_params, lr=unembedding_lr * scale,
+                                 betas=adam_betas, eps=1e-10, weight_decay=0.0))
         for shape in sorted({p.shape for p in matrix_params}):
             group = [p for p in matrix_params if p.shape == shape]
             param_groups.append(dict(kind='muon', params=group, lr=matrix_lr * scale,
@@ -283,7 +319,10 @@ class Llama(nn.Module):
             x = layer(x, cos_sin, self.window_sizes[i], kv_cache)
         x = self.norm(x)
         
-        logits = self.output(x)[..., :self.config.vocab_size].float()
+        if self.output is not None:
+            logits = self.output(x)[..., :self.config.vocab_size].float()
+        else:
+            logits = F.linear(x, self.tok_embeddings.weight)[..., :self.config.vocab_size].float()
         
         if targets is not None:
             ce_loss = F.cross_entropy(logits.reshape(-1, logits.size(-1)), targets.reshape(-1),

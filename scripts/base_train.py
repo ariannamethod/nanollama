@@ -20,7 +20,7 @@ from contextlib import nullcontext
 import torch
 import torch.distributed as dist
 
-from nanollama.llama import Llama, LlamaConfig, get_config_for_depth
+from nanollama.llama import Llama, LlamaConfig, get_config_for_depth, get_named_config, NAMED_CONFIGS
 from nanollama.common import (
     compute_init, compute_cleanup, get_dist_info, print0, print_banner,
     autodetect_device_type, get_peak_flops, DummyWandb
@@ -34,6 +34,9 @@ def parse_args():
     parser = argparse.ArgumentParser(description="Train nanollama base model")
     
     # Model
+    parser.add_argument("--model-size", type=str, default=None,
+                       choices=list(NAMED_CONFIGS.keys()),
+                       help="Named model size (overrides --depth)")
     parser.add_argument("--depth", type=int, default=12, help="Number of transformer layers")
     parser.add_argument("--vocab-size", type=int, default=32000, help="Vocabulary size")
     parser.add_argument("--max-seq-len", type=int, default=2048, help="Maximum sequence length")
@@ -89,14 +92,19 @@ def main():
     if rank == 0:
         print_banner()
     
-    # Model config from depth
-    config = get_config_for_depth(args.depth)
+    # Model config
+    if args.model_size:
+        config = get_named_config(args.model_size)
+        print0(f"\nUsing named config: {args.model_size}")
+    else:
+        config = get_config_for_depth(args.depth)
     config.vocab_size = args.vocab_size
     config.sequence_len = args.max_seq_len
-    
+
     print0(f"\n{'='*60}")
-    print0(f"nanollama training - depth={args.depth}")
-    print0(f"Model: {config.n_layer} layers, {config.n_embd} dim, {config.n_head} heads, {config.n_kv_head} KV heads")
+    print0(f"nanollama training - {args.model_size or f'depth={args.depth}'}")
+    tied_str = ", tied" if config.tie_embeddings else ""
+    print0(f"Model: {config.n_layer} layers, {config.n_embd} dim, {config.n_head} heads, {config.n_kv_head} KV heads{tied_str}")
     print0(f"{'='*60}\n")
     
     # Create model

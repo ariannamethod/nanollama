@@ -12,8 +12,8 @@
 #   bash runs/lambda_train.sh --name nano --base-only
 #   bash runs/lambda_train.sh --name mini --corpus fineweb   # override corpus
 #
-# Model sizes:
-#   nano(34M)  micro(69M)  mini(150M)  small(336M)  goldie(1.1B)  medium(1.6B)  large(3.7B)  big(7.0B)
+# Model sizes (v2 deep-and-thin):
+#   nano(34M)  micro(71M)  mini(151M)  small(338M)  goldie(1.1B)  medium(1.6B)  large(3.7B)  big(7.0B)
 #
 # Data corpus:
 #   nano/micro  → FineWeb-Edu only (small models, simple data)
@@ -25,16 +25,17 @@
 set -e
 
 # ---- Size configs ----
-#                        DEPTH    STEPS     BATCH       PARAMS
-declare -A CFG_DEPTH=(   [nano]=6    [micro]=12   [mini]=16    [small]=24   [goldie]=20    [medium]=28    [large]=32   [big]=36     )
-declare -A CFG_STEPS=(   [nano]=5000 [micro]=-1 [mini]=-1 [small]=-1 [goldie]=-1 [medium]=-1 [large]=-1 [big]=-1   )
+# Architecture v2: deep-and-thin + tied embeddings. See NAMED_CONFIGS in llama.py.
+#                        DEPTH     STEPS     BATCH       PARAMS
+declare -A CFG_DEPTH=(   [nano]=12   [micro]=16   [mini]=20    [small]=24   [goldie]=22    [medium]=32    [large]=36   [big]=38     )
+declare -A CFG_STEPS=(   [nano]=-1   [micro]=-1   [mini]=-1    [small]=-1   [goldie]=-1    [medium]=-1    [large]=-1   [big]=-1     )
 declare -A CFG_BATCH=(   [nano]=131072 [micro]=262144 [mini]=262144 [small]=524288 [goldie]=524288 [medium]=1048576 [large]=1048576 [big]=4194304 )
-declare -A CFG_PARAMS=(  [nano]="34M" [micro]="69M" [mini]="150M" [small]="336M" [goldie]="1.1B" [medium]="1.6B" [large]="3.7B" [big]="7.0B"  )
+declare -A CFG_PARAMS=(  [nano]="34M" [micro]="71M" [mini]="151M" [small]="338M" [goldie]="1.1B" [medium]="1.6B" [large]="3.7B" [big]="7.0B"  )
 
 # ---- Data configs ----
 # nano/micro: FineWeb-Edu samples (simple, fast)
-# ~1090 tokens/sample, so: nano≈55M tok, micro≈545M tok
-declare -A CFG_SAMPLES=( [nano]=50000 [micro]=500000 )
+# ~1090 tokens/sample. Chinchilla 10x: nano needs 340M tok (312K samples), micro needs 690M tok (633K samples)
+declare -A CFG_SAMPLES=( [nano]=350000 [micro]=700000 )
 # mini+: Multi-corpus total tokens (SmolLM2 recipe)
 declare -A CFG_TOKENS=(  [mini]="1500M" [small]="3000M" [goldie]="5000M" [medium]="10000M" [large]="20000M" [big]="40000M" )
 # Default corpus per size
@@ -98,15 +99,15 @@ Optional:
   --save-every <N>       Checkpoint interval (default: 1000)
   --wandb                Enable wandb logging
 
-Sizes:                                                 (~tokens)
-  nano     34M   depth=6   ~20 min   1x GPU    FineWeb-Edu 50K      (~55M)
-  micro    69M   depth=12  ~40 min   1x GPU    FineWeb-Edu 500K     (~545M)
-  mini    150M   depth=16  ~3 hrs    1x GPU    Multi-corpus 500M tokens
-  small   336M   depth=24  ~18 hrs   1x GPU    Multi-corpus 1.5B tokens
-  goldie  1.1B   depth=20  ~24 hrs   1-2x GPU  Multi-corpus 3B tokens    [4 langs, 48K vocab]
-  medium  1.6B   depth=28  ~48 hrs   4x+ GPU   Multi-corpus 5B tokens    [8 langs, 64K vocab]
-  large   3.7B   depth=32  ~96 hrs   8x GPU    Multi-corpus 10B tokens   [13 langs, 96K vocab]
-  big     7.0B   depth=36  ~200 hrs  8x A100   Multi-corpus 20B tokens   [13 langs, 96K vocab]
+Sizes (v2: deep-and-thin + tied embeddings):           (~tokens)
+  nano     34M   depth=12  ~30 min   1x GPU    FineWeb-Edu 350K     (~380M)    [tied]
+  micro    71M   depth=16  ~1 hr     1x GPU    FineWeb-Edu 700K     (~760M)    [tied]
+  mini    151M   depth=20  ~3 hrs    1x GPU    Multi-corpus 1.5B tokens        [tied]
+  small   338M   depth=24  ~18 hrs   1x GPU    Multi-corpus 3B tokens
+  goldie  1.1B   depth=22  ~24 hrs   1-2x GPU  Multi-corpus 5B tokens    [4 langs, 48K vocab]
+  medium  1.6B   depth=32  ~48 hrs   4x+ GPU   Multi-corpus 10B tokens   [8 langs, 64K vocab]
+  large   3.7B   depth=36  ~96 hrs   8x GPU    Multi-corpus 20B tokens   [13 langs, 96K vocab]
+  big     7.0B   depth=38  ~200 hrs  8x A100   Multi-corpus 40B tokens   [13 langs, 96K vocab]
 
 Multi-corpus (SmolLM2 recipe, mini+ default):
   FineWeb-Edu 55%  — educational web text
@@ -133,7 +134,7 @@ if [ -z "$NAME" ]; then
 fi
 
 if [ -z "${CFG_DEPTH[$NAME]}" ]; then
-    echo "ERROR: Unknown model '$NAME'. Available: nano, micro, mini, small, medium, large"
+    echo "ERROR: Unknown model '$NAME'. Available: nano, micro, mini, small, goldie, medium, large, big"
     exit 1
 fi
 
@@ -228,6 +229,7 @@ run_training() {
     echo ""
 
     local cmd_args=(
+        --model-size=$NAME
         --depth=$DEPTH
         --run="$model_tag"
         --model-tag="$model_tag"

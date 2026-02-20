@@ -464,11 +464,24 @@ def main():
         n_layer = max(layer_indices) + 1 if layer_indices else 0
     if n_head == 0 and "layers.0.attn.c_q.weight" in state:
         q_out = state["layers.0.attn.c_q.weight"].shape[0]
-        head_dim = n_embd // (q_out // n_embd) if n_embd else 64
-        n_head = q_out // head_dim if head_dim else 8
+        # Infer head_dim: if K weight exists, head_dim = K_out / gcd analysis, else assume 64
+        if "layers.0.attn.c_k.weight" in state:
+            k_out = state["layers.0.attn.c_k.weight"].shape[0]
+            # head_dim is the GCD-like factor: q_out and k_out are both multiples of head_dim
+            # For MHA: q_out == k_out == n_head * head_dim. For GQA: k_out < q_out.
+            # head_dim = n_embd / n_head, and n_head = q_out / head_dim
+            # Try common head_dims: 64, 128, 96
+            for hd_try in [64, 128, 96]:
+                if q_out % hd_try == 0 and k_out % hd_try == 0:
+                    head_dim = hd_try
+                    break
+            else:
+                head_dim = n_embd // (q_out // n_embd) if n_embd and q_out >= n_embd else 64
+        else:
+            head_dim = n_embd // (q_out // n_embd) if n_embd and q_out >= n_embd else 64
+        n_head = q_out // head_dim
     if n_kv_head == 0 and "layers.0.attn.c_k.weight" in state:
         k_out = state["layers.0.attn.c_k.weight"].shape[0]
-        head_dim = n_embd // n_head if n_head else 64
         n_kv_head = k_out // head_dim if head_dim else 2
 
     head_dim = n_embd // n_head if n_head else 64
@@ -483,11 +496,14 @@ def main():
 
     # ── Architecture metadata ──
     writer.add_string("general.architecture", "llama")
-    writer.add_string("general.name", "nanollama-micro-yent")
+    model_label = os.path.splitext(os.path.basename(args.checkpoint))[0]
+    writer.add_string("general.name", f"nanollama-{model_label}")
     writer.add_uint32("llama.block_count", n_layer)
     writer.add_uint32("llama.embedding_length", n_embd)
     writer.add_uint32("llama.attention.head_count", n_head)
     writer.add_uint32("llama.attention.head_count_kv", n_kv_head)
+    writer.add_uint32("llama.attention.key_length", head_dim)
+    writer.add_uint32("llama.attention.value_length", head_dim)
     writer.add_uint32("llama.feed_forward_length", intermediate_size)
     writer.add_uint32("llama.context_length", sequence_len)
     writer.add_float32("llama.attention.layer_norm_rms_epsilon", norm_eps)
@@ -497,6 +513,16 @@ def main():
     # nanollama-specific flags for Yent engine
     writer.add_bool("nanollama.qk_norm", True)
     writer.add_bool("nanollama.rope_conjugate", True)
+
+    # Detect tied embeddings from config or by comparing weight tensors
+    tied = config.get("tie_embeddings", False)
+    if not tied and "output.weight" in state and "tok_embeddings.weight" in state:
+        if torch.equal(state["output.weight"], state["tok_embeddings.weight"]):
+            tied = True
+            print("  Auto-detected tied embeddings (output.weight == tok_embeddings.weight)")
+    if tied:
+        print("  Tied embeddings: skipping output.weight (Go engine uses tok_embeddings fallback)")
+        state.pop("output.weight", None)
 
     # ── Tokenizer metadata ──
     tok_meta = {}
