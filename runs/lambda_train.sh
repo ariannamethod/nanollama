@@ -33,8 +33,8 @@ declare -A CFG_PARAMS=(  [nano]="34M" [micro]="69M" [mini]="150M" [small]="336M"
 
 # ---- Data configs ----
 # nano/micro: FineWeb-Edu samples (simple, fast)
-# ~1090 tokens/sample, so: nano≈218M tok, micro≈545M tok
-declare -A CFG_SAMPLES=( [nano]=200000 [micro]=500000 )
+# ~1090 tokens/sample, so: nano≈55M tok, micro≈545M tok
+declare -A CFG_SAMPLES=( [nano]=50000 [micro]=500000 )
 # mini+: Multi-corpus total tokens (SmolLM2 recipe)
 declare -A CFG_TOKENS=(  [mini]="500M" [small]="1500M" [medium]="5000M" [large]="10000M" )
 # Default corpus per size
@@ -86,7 +86,7 @@ Optional:
   --wandb                Enable wandb logging
 
 Sizes:                                                 (~tokens)
-  nano     34M   depth=6   ~20 min   1x GPU    FineWeb-Edu 200K     (~218M)
+  nano     34M   depth=6   ~20 min   1x GPU    FineWeb-Edu 50K      (~55M)
   micro    69M   depth=12  ~40 min   1x GPU    FineWeb-Edu 500K     (~545M)
   mini    150M   depth=16  ~3 hrs    1x GPU    Multi-corpus 500M tokens
   small   336M   depth=24  ~18 hrs   1x GPU    Multi-corpus 1.5B tokens
