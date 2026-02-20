@@ -228,6 +228,28 @@ bash runs/lambda_train.sh --name mini --corpus fineweb --samples 1000000  # over
 
 ---
 
+## Models Trained with nanollama
+
+### [yent.yo](https://github.com/ariannamethod/yent.yo) — Diffusion Model With A Bad Character
+
+The first model built with nanollama. A text-to-image system where the LLM doesn't follow instructions — it **reacts** to them.
+
+**micro-Yent** (69M, depth=12) is the brain. Trained from scratch on 216M FineWeb-Edu tokens + 1.4M personality tokens, exported to Q8_0 GGUF (71MB). It reads your text, detects the mood, and generates a visual reaction through BK-SDM-Tiny — not a literal illustration, but an emotional response rendered as image.
+
+- Mood-based templates: sad, angry, love, bored — each triggers different visual behavior
+- Adaptive temperature: boring prompts get maximum chaos (0.95), emotional input stays focused (0.7)
+- ASCII mode: default output is colored terminal glyphs — technopunk Warhol aesthetic
+- Pure Go + ONNX Runtime, zero PyTorch at inference
+- 14.5 tok/s on CPU (LLM) + 3s per image (GPU) or 45s (CPU int8)
+
+> *"This is not a drawing tool. The image IS the model's reaction."*
+
+### mini-WTForacle (150M, depth=16) — in training
+
+Currently training on Lambda A100. 10K steps base + 10K steps with personality data (20% mix). Gamma extraction and GGUF export automated via `runs/lambda_train.sh`.
+
+---
+
 ## GGUF Export
 
 Produces llama.cpp-compatible GGUF v3 files. Norms stored as F32 (llama.cpp standard), matrices in `--dtype` (F16 default). Tokenizer embedded in GGUF — no external files needed at inference.
