@@ -57,16 +57,16 @@ cd go && go build -o nanollama .
 
 One dial controls everything. Set `--depth` and all other dimensions are derived automatically.
 
-| Name | Depth | Width | Heads | KV | FFN | Params | GPU | Time | Data |
-|------|-------|-------|-------|----|-----|--------|-----|------|------|
-| nano | 6 | 384 | 6 | 2 | 768 | 34M | Any | ~20 min | 200K |
-| micro | 12 | 512 | 8 | 2 | 1536 | 69M | 1× A100 | ~40 min | 500K |
-| mini | 16 | 768 | 12 | 4 | 2304 | 150M | 1× A100 | ~3 hrs | 1M |
-| small | 24 | 1024 | 16 | 4 | 3072 | 336M | 1× A100 | ~18 hrs | 3M |
-| medium | 28 | 2048 | 32 | 8 | 6144 | 1.6B | 4× A100 | ~48 hrs | 10M |
-| large | 32 | 3200 | 32 | 8 | 9728 | 3.7B | 8× A100 | ~96 hrs | 10M |
+| Name | Depth | Width | Heads | KV | FFN | Params | GPU | Time | Tokens |
+|------|-------|-------|-------|----|-----|--------|-----|------|--------|
+| nano | 6 | 384 | 6 | 2 | 768 | 34M | Any | ~20 min | ~218M |
+| micro | 12 | 512 | 8 | 2 | 1536 | 69M | 1× A100 | ~40 min | ~545M |
+| mini | 16 | 768 | 12 | 4 | 2304 | 150M | 1× A100 | ~3 hrs | 500M |
+| small | 24 | 1024 | 16 | 4 | 3072 | 336M | 1× A100 | ~18 hrs | 1.5B |
+| medium | 28 | 2048 | 32 | 8 | 6144 | 1.6B | 4× A100 | ~48 hrs | 5B |
+| large | 32 | 3200 | 32 | 8 | 9728 | 3.7B | 8× A100 | ~96 hrs | 10B |
 
-FFN dim = round_up(2 × 4 × n_embd / 3, 256). Data = recommended FineWeb-Edu samples.
+FFN dim = round_up(2 × 4 × n_embd / 3, 256). Tokens = recommended training corpus size. nano/micro use FineWeb-Edu only; mini+ use multi-corpus (SmolLM2 recipe).
 
 ---
 
@@ -113,14 +113,14 @@ The tokenizer is [SentencePiece](https://github.com/google/sentencepiece) BPE tr
 
 **Data by model size:**
 
-| Size | Corpus | Data | Personality pairs |
-|------|--------|------|-------------------|
-| nano | FineWeb-Edu | 200K samples (~50M tok) | 500–2K |
-| micro | FineWeb-Edu | 500K samples (~125M tok) | 1K–5K |
-| mini | Multi-corpus | 250M tokens | 2K–10K |
-| small | Multi-corpus | 750M tokens | 5K–20K |
-| medium | Multi-corpus | 2.5B tokens | 10K–50K |
-| large | Multi-corpus | 5B tokens | 20K–100K |
+| Size | Corpus | Tokens | Personality pairs |
+|------|--------|--------|-------------------|
+| nano | FineWeb-Edu | ~218M (200K samples) | 500–2K |
+| micro | FineWeb-Edu | ~545M (500K samples) | 1K–5K |
+| mini | Multi-corpus | 500M | 2K–10K |
+| small | Multi-corpus | 1.5B | 5K–20K |
+| medium | Multi-corpus | 5B | 10K–50K |
+| large | Multi-corpus | 10B | 20K–100K |
 
 ---
 

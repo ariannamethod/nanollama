@@ -33,9 +33,10 @@ declare -A CFG_PARAMS=(  [nano]="34M" [micro]="69M" [mini]="150M" [small]="336M"
 
 # ---- Data configs ----
 # nano/micro: FineWeb-Edu samples (simple, fast)
+# ~1090 tokens/sample, so: nano≈218M tok, micro≈545M tok
 declare -A CFG_SAMPLES=( [nano]=200000 [micro]=500000 )
 # mini+: Multi-corpus total tokens (SmolLM2 recipe)
-declare -A CFG_TOKENS=(  [mini]="250M" [small]="750M" [medium]="2500M" [large]="5000M" )
+declare -A CFG_TOKENS=(  [mini]="500M" [small]="1500M" [medium]="5000M" [large]="10000M" )
 # Default corpus per size
 declare -A CFG_CORPUS=(  [nano]="fineweb" [micro]="fineweb" [mini]="multi" [small]="multi" [medium]="multi" [large]="multi" )
 
@@ -84,13 +85,13 @@ Optional:
   --save-every <N>       Checkpoint interval (default: 1000)
   --wandb                Enable wandb logging
 
-Sizes:
-  nano     34M   depth=6   ~20 min   1x GPU    FineWeb-Edu 200K
-  micro    69M   depth=12  ~40 min   1x GPU    FineWeb-Edu 500K
-  mini    150M   depth=16  ~3 hrs    1x GPU    Multi-corpus 250M tokens
-  small   336M   depth=24  ~18 hrs   1x GPU    Multi-corpus 750M tokens
-  medium  1.6B   depth=28  ~48 hrs   4x+ GPU   Multi-corpus 2.5B tokens
-  large   3.7B   depth=32  ~96 hrs   8x GPU    Multi-corpus 5B tokens
+Sizes:                                                 (~tokens)
+  nano     34M   depth=6   ~20 min   1x GPU    FineWeb-Edu 200K     (~218M)
+  micro    69M   depth=12  ~40 min   1x GPU    FineWeb-Edu 500K     (~545M)
+  mini    150M   depth=16  ~3 hrs    1x GPU    Multi-corpus 500M tokens
+  small   336M   depth=24  ~18 hrs   1x GPU    Multi-corpus 1.5B tokens
+  medium  1.6B   depth=28  ~48 hrs   4x+ GPU   Multi-corpus 5B tokens
+  large   3.7B   depth=32  ~96 hrs   8x GPU    Multi-corpus 10B tokens
 
 Multi-corpus (SmolLM2 recipe, mini+ default):
   FineWeb-Edu 55%  — educational web text
