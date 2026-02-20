@@ -46,11 +46,12 @@ declare -A CFG_CORPUS=(  [nano]="fineweb" [micro]="fineweb" [mini]="multi" [smal
 #   Implementation: extra base_train.py call between base and personality,
 #   with --lr-max 0.002 and curated data (filtered CulturaX or SmolTalk).
 #
-# Multilingual (medium+): Requires 3 changes:
-#   1. New tokenizer trained on CulturaX (64K+ vocab instead of 32K English-only)
-#   2. Multilingual training corpus with temperature-based language sampling
-#   3. Mid-training on quality multilingual data
-#   CulturaX = 6.3T tokens, 167 languages. γ ⊥ δ proven — personality survives language switch.
+# Multilingual tokenizer tiers (train with: python -m scripts.train_tokenizer --tier N):
+#   Tier 1 (small, 48K vocab):  EN, RU, FR, DE, ES — Latin + Cyrillic
+#   Tier 2 (medium, 64K vocab): + AR, HI, TR, PT, UK — new scripts (Arabic, Devanagari)
+#   Tier 3 (large, 96-128K):    + ZH, JA, KO — CJK logographic systems
+#   Each tier inherits previous. Trained on balanced CulturaX samples.
+#   γ ⊥ δ proven — personality survives language switch.
 
 # ---- Parse arguments ----
 NAME=""

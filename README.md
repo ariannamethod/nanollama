@@ -70,13 +70,14 @@ FFN dim = round_up(2 × 4 × n_embd / 3, 256). Tokens = recommended training cor
 
 **Pipeline stages by size:**
 
-| Size | Base | Mid-training | Personality | Multilingual |
-|------|------|-------------|-------------|--------------|
-| nano–mini | multi-corpus | — | γ extraction | — |
-| small | multi-corpus | planned | γ extraction | — |
-| medium+ | multi-corpus | planned | γ extraction | planned (CulturaX, 64K+ vocab) |
+| Size | Tokenizer | Base | Mid-training | Personality | Languages |
+|------|-----------|------|-------------|-------------|-----------|
+| nano–mini | 32K EN | multi-corpus | — | γ extraction | English |
+| small | 48K Tier 1 | multi-corpus | planned | γ extraction | EN, RU, FR, DE, ES |
+| medium | 64K Tier 2 | multi-corpus | planned | γ extraction | Tier 1 + AR, HI, TR, PT, UK |
+| large | 96–128K Tier 3 | multi-corpus | planned | γ extraction | Tier 2 + ZH, JA, KO |
 
-Mid-training = separate quality stage with reduced LR (SmolLM2 approach). Multilingual = new tokenizer + CulturaX (6.3T tokens, 167 languages). Both are TODO — current pipeline is base → personality for all sizes.
+Multilingual tiers are progressive — each inherits the previous tier's languages. Tokenizer is trained on balanced [CulturaX](https://huggingface.co/datasets/uonlp/CulturaX) samples per language. Train with `python -m scripts.train_tokenizer --tier 1`.
 
 ---
 
