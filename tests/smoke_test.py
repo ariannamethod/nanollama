@@ -10,7 +10,7 @@ Expected: Completes in ~5 seconds on CPU, ~2 seconds on GPU.
 Loss should decrease by at least 10%.
 
 For testing with real data, first run:
-    python -m data.prepare_tinystories
+    python -m data.prepare_fineweb --num-samples 50000
 """
 
 import os
