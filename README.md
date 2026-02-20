@@ -57,27 +57,29 @@ cd go && go build -o nanollama .
 
 One dial controls everything. Set `--depth` and all other dimensions are derived automatically.
 
-| Name | Depth | Width | Heads | KV | FFN | Params | GPU | Time | Tokens |
-|------|-------|-------|-------|----|-----|--------|-----|------|--------|
-| nano | 6 | 384 | 6 | 2 | 768 | 34M | Any | ~20 min | ~55M |
-| micro | 12 | 512 | 8 | 2 | 1536 | 69M | 1× A100 | ~40 min | ~545M |
-| mini | 16 | 768 | 12 | 4 | 2304 | 150M | 1× A100 | ~3 hrs | 500M |
-| small | 24 | 1024 | 16 | 4 | 3072 | 336M | 1× A100 | ~18 hrs | 1.5B |
-| medium | 28 | 2048 | 32 | 8 | 6144 | 1.6B | 4× A100 | ~48 hrs | 5B |
-| large | 32 | 3200 | 32 | 8 | 9728 | 3.7B | 8× A100 | ~96 hrs | 10B |
+| Name | Depth | Width | Heads | KV | FFN | Params | GPU | Time | Tokens | Languages |
+|------|-------|-------|-------|----|-----|--------|-----|------|--------|-----------|
+| nano | 6 | 384 | 6 | 2 | 768 | 34M | Any | ~20 min | ~55M | EN |
+| micro | 12 | 512 | 8 | 2 | 1536 | 69M | 1× A100 | ~40 min | ~545M | EN |
+| mini | 16 | 768 | 12 | 4 | 2304 | 150M | 1× A100 | ~3 hrs | 500M | EN |
+| small | 24 | 1024 | 16 | 4 | 3072 | 336M | 1× A100 80GB | ~18 hrs | 1.5B | EN |
+| **goldie** | **20** | **2048** | **32** | **8** | **5632** | **1.1B** | **1-2× A100 80GB** | **~24 hrs** | **3B** | **EN, RU, FR, DE** |
+| medium | 32 | 2048 | 32 | 8 | 5632 | 1.6B | 4× A100 80GB | ~48 hrs | 5B | + ES, PT, UK, TR |
+| large | 32 | 3200 | 32 | 8 | 8704 | 3.7B | 8× A100 80GB | ~96 hrs | 10B | + AR, HI, ZH, JA, KO |
+| big | 36 | 4096 | 64 | 8 | 11008 | **7.0B** | 8× A100 80GB | ~200 hrs | 20B | 13 languages |
 
-FFN dim = round_up(2 × 4 × n_embd / 3, 256). Tokens = recommended training corpus size. nano/micro use FineWeb-Edu only; mini+ use multi-corpus (SmolLM2 recipe).
+FFN dim = round_up(8 × n_embd / 3, 256). Tokens = recommended training corpus size. nano/micro use FineWeb-Edu only; mini+ use multi-corpus (SmolLM2 recipe). Goldie is the first multilingual model in the series.
 
-**Pipeline stages by size:**
+**Progressive multilingual tokenizer tiers:**
 
-| Size | Tokenizer | Base | Mid-training | Personality | Languages |
-|------|-----------|------|-------------|-------------|-----------|
-| nano–mini | 32K EN | multi-corpus | — | γ extraction | English |
-| small | 48K Tier 1 | multi-corpus | planned | γ extraction | EN, RU, FR, DE, ES |
-| medium | 64K Tier 2 | multi-corpus | planned | γ extraction | Tier 1 + AR, HI, TR, PT, UK |
-| large | 96–128K Tier 3 | multi-corpus | planned | γ extraction | Tier 2 + ZH, JA, KO |
+| Tier | Model | Vocab | Languages | Script families |
+|------|-------|-------|-----------|-----------------|
+| — | nano–small | 32K | English only | Latin |
+| Tier 1 | goldie (1.1B) | 48K | EN, RU, FR, DE | Latin + Cyrillic |
+| Tier 2 | medium (1.6B) | 64K | + ES, PT, UK, TR | Extended Latin/Cyrillic |
+| Tier 3 | large (3.7B), big (7.0B) | 96K | + AR, HI, ZH, JA, KO | + Arabic, Devanagari, CJK |
 
-Multilingual tiers are progressive — each inherits the previous tier's languages. Tokenizer is trained on balanced [CulturaX](https://huggingface.co/datasets/uonlp/CulturaX) samples per language. Train with `python -m scripts.train_tokenizer --tier 1`.
+Each tier inherits the previous tier's languages. Tokenizer is trained on balanced [CulturaX](https://huggingface.co/datasets/uonlp/CulturaX) samples per language + FineWeb-Edu for English. Train with `python -m scripts.train_tokenizer --tier N`.
 
 ---
 

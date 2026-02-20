@@ -66,8 +66,10 @@ GGUF_TYPE_FLOAT64 = 12
 # GGML tensor data types
 GGML_TYPE_F32 = 0
 GGML_TYPE_F16 = 1
+GGML_TYPE_Q4_0 = 2
 GGML_TYPE_Q8_0 = 8
 
+Q4_BLOCK_SIZE = 32
 Q8_BLOCK_SIZE = 32
 
 
@@ -78,6 +80,45 @@ def tensor_to_bytes(tensor: torch.Tensor, target_dtype: torch.dtype) -> bytes:
     t = tensor.to(target_dtype).contiguous().clone()
     nbytes = t.nelement() * t.element_size()
     return bytes(t.untyped_storage())[:nbytes]
+
+
+def tensor_to_q4_0(tensor: torch.Tensor) -> bytes:
+    """Quantize tensor to GGML Q4_0 format.
+
+    Q4_0 block layout (18 bytes per 32 elements):
+      - 2 bytes: float16 scale (d)
+      - 16 bytes: 32 x 4-bit unsigned values packed in pairs (+ 8 offset)
+
+    Quantization: scale = max(|block|) / -8, q[i] = round(val[i] / scale) + 8
+    """
+    import struct as st
+
+    t = tensor.float().contiguous().view(-1)
+    n = t.numel()
+    assert n % Q4_BLOCK_SIZE == 0, f"Tensor size {n} not divisible by {Q4_BLOCK_SIZE}"
+
+    nblocks = n // Q4_BLOCK_SIZE
+    t = t.view(nblocks, Q4_BLOCK_SIZE)
+
+    # Per-block scale: max(|block|) / -8 (llama.cpp convention: d = max / -8)
+    amax = t.abs().max(dim=1).values  # [nblocks]
+    scales = amax / 8.0
+    scales[scales == 0] = 1.0
+
+    # Quantize to 0..15 range (unsigned 4-bit with offset 8)
+    quantized = torch.clamp(torch.round(t / scales.unsqueeze(1)) + 8, 0, 15).to(torch.uint8)
+
+    # Pack in split-half layout (ggml standard): first 16 values → low nibbles, second 16 → high nibbles
+    out = bytearray()
+    half = Q4_BLOCK_SIZE // 2
+    scales_f16 = scales.half()
+    for i in range(nblocks):
+        out += st.pack('<e', scales_f16[i].item())
+        q = quantized[i]
+        for j in range(half):
+            out.append(q[j].item() | (q[j + half].item() << 4))
+
+    return bytes(out)
 
 
 def tensor_to_q8_0(tensor: torch.Tensor) -> bytes:
@@ -159,7 +200,9 @@ class GGUFWriter:
 
     def add_tensor(self, name: str, tensor: torch.Tensor, ggml_type: int):
         """Add a tensor from a torch tensor."""
-        if ggml_type == GGML_TYPE_Q8_0:
+        if ggml_type == GGML_TYPE_Q4_0:
+            raw = tensor_to_q4_0(tensor)
+        elif ggml_type == GGML_TYPE_Q8_0:
             raw = tensor_to_q8_0(tensor)
         elif ggml_type == GGML_TYPE_F16:
             raw = tensor_to_bytes(tensor, torch.float16)
@@ -484,7 +527,7 @@ def main():
             state[f"layers.{i}.ffn_norm.weight"] = ones
 
     # ── Convert weight tensors ──
-    dtype_map = {"f32": GGML_TYPE_F32, "f16": GGML_TYPE_F16, "q8_0": GGML_TYPE_Q8_0}
+    dtype_map = {"f32": GGML_TYPE_F32, "f16": GGML_TYPE_F16, "q4_0": GGML_TYPE_Q4_0, "q8_0": GGML_TYPE_Q8_0}
     ggml_type = dtype_map[args.dtype]
 
     print(f"\nConverting weights to {args.dtype}...")
@@ -498,14 +541,15 @@ def main():
         if tensor.dim() == 1:
             t_ggml = GGML_TYPE_F32
         else:
-            # For Q8_0, verify divisibility by block size
-            if ggml_type == GGML_TYPE_Q8_0 and tensor.numel() % Q8_BLOCK_SIZE != 0:
-                print(f"  WARNING: {name} ({tensor.numel()} elems) not divisible by {Q8_BLOCK_SIZE}, using F16")
+            # Quantized formats require elements divisible by block size
+            block_size = Q4_BLOCK_SIZE if ggml_type == GGML_TYPE_Q4_0 else Q8_BLOCK_SIZE
+            if ggml_type in (GGML_TYPE_Q4_0, GGML_TYPE_Q8_0) and tensor.numel() % block_size != 0:
+                print(f"  WARNING: {name} ({tensor.numel()} elems) not divisible by {block_size}, using F16")
                 t_ggml = GGML_TYPE_F16
             else:
                 t_ggml = ggml_type
         writer.add_tensor(gguf_name, tensor.float(), t_ggml)
-        dtype_names = {GGML_TYPE_F32: "F32", GGML_TYPE_F16: "F16", GGML_TYPE_Q8_0: "Q8_0"}
+        dtype_names = {GGML_TYPE_F32: "F32", GGML_TYPE_F16: "F16", GGML_TYPE_Q4_0: "Q4_0", GGML_TYPE_Q8_0: "Q8_0"}
         dtype_str = dtype_names[t_ggml]
         shape_str = "x".join(str(d) for d in tensor.shape)
         print(f"  {name:45s} → {gguf_name:35s}  [{shape_str}] {dtype_str}")

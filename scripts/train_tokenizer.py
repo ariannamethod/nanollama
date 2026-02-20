@@ -3,9 +3,9 @@
 Train a multilingual SentencePiece BPE tokenizer for nanollama.
 
 Three tiers of progressive multilingual support:
-  Tier 1 (small, 48K):   EN, RU, FR, DE, ES — Latin + Cyrillic
-  Tier 2 (medium, 64K):  Tier 1 + AR, HI, TR, PT, UK — new scripts
-  Tier 3 (large, 96K+):  Tier 2 + ZH, JA, KO — CJK
+  Tier 1 (goldie, 48K):  EN, RU, FR, DE — Latin + Cyrillic core
+  Tier 2 (medium, 64K):  Tier 1 + ES, PT, UK, TR — extended Latin/Cyrillic
+  Tier 3 (large, 96K):   Tier 2 + AR, HI, ZH, JA, KO — all remaining scripts
 
 Usage:
     python -m scripts.train_tokenizer --tier 1
@@ -30,20 +30,20 @@ TIER_1 = {
     "ru": "Russian",
     "fr": "French",
     "de": "German",
-    "es": "Spanish",
 }
 
 TIER_2 = {
     **TIER_1,
-    "ar": "Arabic",
-    "hi": "Hindi",
-    "tr": "Turkish",
+    "es": "Spanish",
     "pt": "Portuguese",
     "uk": "Ukrainian",
+    "tr": "Turkish",
 }
 
 TIER_3 = {
     **TIER_2,
+    "ar": "Arabic",
+    "hi": "Hindi",
     "zh": "Chinese",
     "ja": "Japanese",
     "ko": "Korean",
@@ -273,7 +273,7 @@ def verify_tokenizer(model_path: str, languages: dict):
 def main():
     parser = argparse.ArgumentParser(description="Train multilingual tokenizer for nanollama")
     parser.add_argument("--tier", type=int, choices=[1, 2, 3],
-                        help="Language tier (1=Latin+Cyrillic, 2=+Arabic/Devanagari, 3=+CJK)")
+                        help="Language tier (1=EN/RU/FR/DE, 2=+ES/PT/UK/TR, 3=+AR/HI/ZH/JA/KO)")
     parser.add_argument("--languages", type=str, default=None,
                         help="Comma-separated language codes (overrides --tier). Example: en,ru,fr")
     parser.add_argument("--vocab-size", type=int, default=None,

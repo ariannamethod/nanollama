@@ -13,7 +13,7 @@
 #   bash runs/lambda_train.sh --name mini --corpus fineweb   # override corpus
 #
 # Model sizes:
-#   nano(34M)  micro(69M)  mini(150M)  small(336M)  medium(1.6B)  large(3.7B)
+#   nano(34M)  micro(69M)  mini(150M)  small(336M)  goldie(1.1B)  medium(1.6B)  large(3.7B)  big(7.0B)
 #
 # Data corpus:
 #   nano/micro  → FineWeb-Edu only (small models, simple data)
@@ -26,19 +26,19 @@ set -e
 
 # ---- Size configs ----
 #                        DEPTH    STEPS     BATCH       PARAMS
-declare -A CFG_DEPTH=(   [nano]=6    [micro]=12   [mini]=16    [small]=24   [medium]=28    [large]=32   )
-declare -A CFG_STEPS=(   [nano]=5000 [micro]=10000 [mini]=10000 [small]=10000 [medium]=15000 [large]=20000 )
-declare -A CFG_BATCH=(   [nano]=262144 [micro]=524288 [mini]=524288 [small]=524288 [medium]=1048576 [large]=1048576 )
-declare -A CFG_PARAMS=(  [nano]="34M" [micro]="69M" [mini]="150M" [small]="336M" [medium]="1.6B" [large]="3.7B" )
+declare -A CFG_DEPTH=(   [nano]=6    [micro]=12   [mini]=16    [small]=24   [goldie]=20    [medium]=28    [large]=32   [big]=36     )
+declare -A CFG_STEPS=(   [nano]=5000 [micro]=-1 [mini]=-1 [small]=-1 [goldie]=-1 [medium]=-1 [large]=-1 [big]=-1   )
+declare -A CFG_BATCH=(   [nano]=131072 [micro]=262144 [mini]=262144 [small]=524288 [goldie]=524288 [medium]=1048576 [large]=1048576 [big]=4194304 )
+declare -A CFG_PARAMS=(  [nano]="34M" [micro]="69M" [mini]="150M" [small]="336M" [goldie]="1.1B" [medium]="1.6B" [large]="3.7B" [big]="7.0B"  )
 
 # ---- Data configs ----
 # nano/micro: FineWeb-Edu samples (simple, fast)
 # ~1090 tokens/sample, so: nano≈55M tok, micro≈545M tok
 declare -A CFG_SAMPLES=( [nano]=50000 [micro]=500000 )
 # mini+: Multi-corpus total tokens (SmolLM2 recipe)
-declare -A CFG_TOKENS=(  [mini]="500M" [small]="1500M" [medium]="5000M" [large]="10000M" )
+declare -A CFG_TOKENS=(  [mini]="1500M" [small]="3000M" [goldie]="5000M" [medium]="10000M" [large]="20000M" [big]="40000M" )
 # Default corpus per size
-declare -A CFG_CORPUS=(  [nano]="fineweb" [micro]="fineweb" [mini]="multi" [small]="multi" [medium]="multi" [large]="multi" )
+declare -A CFG_CORPUS=(  [nano]="fineweb" [micro]="fineweb" [mini]="multi" [small]="multi" [goldie]="multi" [medium]="multi" [large]="multi" [big]="multi" )
 
 # ---- TODO: Future pipeline stages ----
 # Mid-training (small+): Separate quality stage with reduced LR after base.
@@ -47,9 +47,9 @@ declare -A CFG_CORPUS=(  [nano]="fineweb" [micro]="fineweb" [mini]="multi" [smal
 #   with --lr-max 0.002 and curated data (filtered CulturaX or SmolTalk).
 #
 # Multilingual tokenizer tiers (train with: python -m scripts.train_tokenizer --tier N):
-#   Tier 1 (small, 48K vocab):  EN, RU, FR, DE, ES — Latin + Cyrillic
-#   Tier 2 (medium, 64K vocab): + AR, HI, TR, PT, UK — new scripts (Arabic, Devanagari)
-#   Tier 3 (large, 96-128K):    + ZH, JA, KO — CJK logographic systems
+#   Tier 1 (goldie, 48K vocab):  EN, RU, FR, DE — Latin + Cyrillic core
+#   Tier 2 (medium, 64K vocab):  + ES, PT, UK, TR — extended Latin/Cyrillic
+#   Tier 3 (large, 96K vocab):   + AR, HI, ZH, JA, KO — all remaining scripts
 #   Each tier inherits previous. Trained on balanced CulturaX samples.
 #   γ ⊥ δ proven — personality survives language switch.
 
@@ -84,7 +84,7 @@ while [[ $# -gt 0 ]]; do
 Usage: bash runs/lambda_train.sh --name <size> [options]
 
 Required:
-  --name <size>          nano, micro, mini, small, medium, large
+  --name <size>          nano, micro, mini, small, goldie, medium, large, big
 
 Optional:
   --personality <file>   JSONL for personality training + gamma extraction
@@ -103,8 +103,10 @@ Sizes:                                                 (~tokens)
   micro    69M   depth=12  ~40 min   1x GPU    FineWeb-Edu 500K     (~545M)
   mini    150M   depth=16  ~3 hrs    1x GPU    Multi-corpus 500M tokens
   small   336M   depth=24  ~18 hrs   1x GPU    Multi-corpus 1.5B tokens
-  medium  1.6B   depth=28  ~48 hrs   4x+ GPU   Multi-corpus 5B tokens
-  large   3.7B   depth=32  ~96 hrs   8x GPU    Multi-corpus 10B tokens
+  goldie  1.1B   depth=20  ~24 hrs   1-2x GPU  Multi-corpus 3B tokens    [4 langs, 48K vocab]
+  medium  1.6B   depth=28  ~48 hrs   4x+ GPU   Multi-corpus 5B tokens    [8 langs, 64K vocab]
+  large   3.7B   depth=32  ~96 hrs   8x GPU    Multi-corpus 10B tokens   [13 langs, 96K vocab]
+  big     7.0B   depth=36  ~200 hrs  8x A100   Multi-corpus 20B tokens   [13 langs, 96K vocab]
 
 Multi-corpus (SmolLM2 recipe, mini+ default):
   FineWeb-Edu 55%  — educational web text

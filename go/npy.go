@@ -107,8 +107,14 @@ func readNpyF16Raw(r io.Reader) ([]uint16, [2]int, error) {
 		return nil, [2]int{}, fmt.Errorf("expected float16, got header: %s", hstr)
 	}
 
-	shape := parseShape(hstr)
-	if shape[0] == 0 || shape[1] == 0 {
+	// Support both 1D and 2D shapes
+	shapeAny := parseShapeAny(hstr)
+	var shape [2]int
+	if len(shapeAny) == 1 {
+		shape = [2]int{shapeAny[0], 1} // 1D: treat as (N, 1)
+	} else if len(shapeAny) >= 2 {
+		shape = [2]int{shapeAny[0], shapeAny[1]}
+	} else {
 		return nil, [2]int{}, fmt.Errorf("could not parse shape from header: %s", hstr)
 	}
 
@@ -154,6 +160,38 @@ func readNpyInt32(r io.Reader) ([]int32, error) {
 	data := make([]int32, total)
 	for i := 0; i < total; i++ {
 		data[i] = int32(binary.LittleEndian.Uint32(raw[i*4:]))
+	}
+	return data, nil
+}
+
+func readNpyInt64(r io.Reader) ([]int64, error) {
+	header, err := readNpyHeader(r)
+	if err != nil {
+		return nil, err
+	}
+
+	if !strings.Contains(header, "'<i8'") && !strings.Contains(header, "int64") {
+		return nil, fmt.Errorf("expected int64 dtype, got header: %s", header)
+	}
+
+	shape := parseShapeAny(header)
+	if len(shape) == 0 {
+		return nil, fmt.Errorf("could not parse shape from header: %s", header)
+	}
+
+	total := 1
+	for _, s := range shape {
+		total *= s
+	}
+
+	raw := make([]byte, total*8)
+	if _, err := io.ReadFull(r, raw); err != nil {
+		return nil, fmt.Errorf("read int64 data: %w", err)
+	}
+
+	data := make([]int64, total)
+	for i := 0; i < total; i++ {
+		data[i] = int64(binary.LittleEndian.Uint64(raw[i*8:]))
 	}
 	return data, nil
 }

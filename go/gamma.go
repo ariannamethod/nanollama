@@ -64,44 +64,166 @@ func LoadGamma(path string) (*GammaEssence, error) {
 		}
 	}
 
+	// Support two formats:
+	// 1. Simple: indices.npy + values.npy (Yent-style)
+	// 2. Full:   tok_embeddings.weight.indices_0.npy + .indices_1.npy + .values.npy (nanollama extract_gamma)
+	indicesFile := ""
+	valuesFile := ""
+	var indices1 []int32 // column indices for 2D sparse (format 2)
+
+	// Detect format
 	for _, f := range r.File {
-		switch f.Name {
-		case "indices.npy":
+		if f.Name == "indices.npy" {
+			indicesFile = "indices.npy"
+			valuesFile = "values.npy"
+			break
+		}
+		if f.Name == "tok_embeddings.weight.indices_0.npy" {
+			indicesFile = "tok_embeddings.weight.indices_0.npy"
+			valuesFile = "tok_embeddings.weight.values.npy"
+			break
+		}
+	}
+
+	if indicesFile == "" {
+		return nil, fmt.Errorf("gamma npz: no indices found (expected indices.npy or tok_embeddings.weight.indices_0.npy)")
+	}
+
+	// Check if values are f16
+	for _, f := range r.File {
+		if f.Name == valuesFile {
 			rc, err := f.Open()
 			if err != nil {
-				return nil, fmt.Errorf("open indices.npy: %w", err)
+				return nil, fmt.Errorf("open %s: %w", valuesFile, err)
+			}
+			hdr, err := readNpyHeader(rc)
+			rc.Close()
+			if err != nil {
+				return nil, fmt.Errorf("peek %s: %w", valuesFile, err)
+			}
+			isF16 = strings.Contains(hdr, "'<f2'") || strings.Contains(hdr, "float16")
+			break
+		}
+	}
+
+	for _, f := range r.File {
+		switch f.Name {
+		case indicesFile:
+			rc, err := f.Open()
+			if err != nil {
+				return nil, fmt.Errorf("open %s: %w", f.Name, err)
 			}
 			indices, err = readNpyInt32(rc)
 			rc.Close()
 			if err != nil {
-				return nil, fmt.Errorf("read indices.npy: %w", err)
+				return nil, fmt.Errorf("read %s: %w", f.Name, err)
 			}
 
-		case "values.npy":
+		case "tok_embeddings.weight.indices_1.npy":
 			rc, err := f.Open()
 			if err != nil {
-				return nil, fmt.Errorf("open values.npy: %w", err)
+				return nil, fmt.Errorf("open %s: %w", f.Name, err)
+			}
+			indices1, err = readNpyInt32(rc)
+			rc.Close()
+			if err != nil {
+				return nil, fmt.Errorf("read %s: %w", f.Name, err)
+			}
+
+		case valuesFile:
+			rc, err := f.Open()
+			if err != nil {
+				return nil, fmt.Errorf("open %s: %w", f.Name, err)
 			}
 			if isF16 {
 				var err2 error
 				valuesF16, valShape, err2 = readNpyF16Raw(rc)
 				rc.Close()
 				if err2 != nil {
-					return nil, fmt.Errorf("read values.npy f16: %w", err2)
+					return nil, fmt.Errorf("read %s f16: %w", f.Name, err2)
 				}
 			} else {
 				var err2 error
 				valuesF32, valShape, err2 = readNpyFloat(rc)
 				rc.Close()
 				if err2 != nil {
-					return nil, fmt.Errorf("read values.npy f32: %w", err2)
+					return nil, fmt.Errorf("read %s f32: %w", f.Name, err2)
 				}
 			}
 		}
 	}
 
 	if indices == nil || (valuesF16 == nil && valuesF32 == nil) {
-		return nil, fmt.Errorf("gamma npz missing indices.npy or values.npy")
+		return nil, fmt.Errorf("gamma npz missing indices or values")
+	}
+
+	// Format 2 (nanollama): sparse COO [row, col] → dense [N_tokens, embed_dim]
+	// indices = row indices (token IDs), indices1 = col indices (embed dim)
+	// values = flat array of non-zero values
+	// Need to reconstruct dense [unique_tokens × embed_dim] + simple token ID indices
+	if indices1 != nil {
+		// Get embed_dim from shape file
+		var embedDim int
+		for _, f := range r.File {
+			if f.Name == "tok_embeddings.weight.shape.npy" {
+				rc, err := f.Open()
+				if err != nil {
+					break
+				}
+				shapeArr, err := readNpyInt64(rc)
+				rc.Close()
+				if err == nil && len(shapeArr) >= 2 {
+					embedDim = int(shapeArr[1])
+				}
+				break
+			}
+		}
+		if embedDim == 0 {
+			return nil, fmt.Errorf("gamma: tok_embeddings.weight.shape.npy missing or invalid")
+		}
+
+		// Find unique token IDs and build dense matrix
+		tokenSet := make(map[int32]bool)
+		for _, idx := range indices {
+			tokenSet[idx] = true
+		}
+		tokenList := make([]int32, 0, len(tokenSet))
+		for tok := range tokenSet {
+			tokenList = append(tokenList, tok)
+		}
+		// Sort for determinism
+		for i := 0; i < len(tokenList); i++ {
+			for j := i + 1; j < len(tokenList); j++ {
+				if tokenList[j] < tokenList[i] {
+					tokenList[i], tokenList[j] = tokenList[j], tokenList[i]
+				}
+			}
+		}
+		tokIdx := make(map[int32]int, len(tokenList))
+		for i, tok := range tokenList {
+			tokIdx[tok] = i
+		}
+
+		numTokens := len(tokenList)
+		if isF16 {
+			dense := make([]uint16, numTokens*embedDim)
+			for i := range indices {
+				row := tokIdx[indices[i]]
+				col := int(indices1[i])
+				dense[row*embedDim+col] = valuesF16[i]
+			}
+			valuesF16 = dense
+		} else {
+			dense := make([]float32, numTokens*embedDim)
+			for i := range indices {
+				row := tokIdx[indices[i]]
+				col := int(indices1[i])
+				dense[row*embedDim+col] = valuesF32[i]
+			}
+			valuesF32 = dense
+		}
+		indices = tokenList
+		valShape = [2]int{numTokens, embedDim}
 	}
 
 	numTokens := valShape[0]

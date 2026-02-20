@@ -47,10 +47,10 @@ def parse_args():
     # Training
     parser.add_argument("--total-batch-size", type=int, default=524288, help="Total batch size in tokens")
     parser.add_argument("--device-batch-size", type=int, default=32, help="Per-device batch size")
-    parser.add_argument("--num-iterations", type=int, default=10000, help="Number of training iterations")
+    parser.add_argument("--num-iterations", type=int, default=-1, help="Training iterations (-1 = auto from Chinchilla ratio)")
     parser.add_argument("--warmup-iters", type=int, default=100, help="Warmup iterations")
     parser.add_argument("--lr", type=float, default=None, help="Learning rate (auto if None)")
-    parser.add_argument("--weight-decay", type=float, default=0.01, help="Weight decay (Moonlight: critical for Muon scaling)")
+    parser.add_argument("--weight-decay", type=float, default=0.1, help="Weight decay (Moonlight: critical for Muon scaling)")
     
     # Logging & Checkpoints
     parser.add_argument("--run", type=str, default="nanollama", help="Run name for wandb")
@@ -67,7 +67,7 @@ def parse_args():
 
 def get_lr_schedule(step, warmup_iters, max_iters, max_lr, min_lr_ratio=0.0):
     """WSD (Warmup-Stable-Decay) schedule. Better than cosine: no need to know total steps upfront."""
-    decay_start = int(max_iters * 0.80)  # Last 20% is decay
+    decay_start = int(max_iters * 0.50)  # Last 50% is warmdown (nanochat convention)
     if step < warmup_iters:
         return max_lr * (step + 1) / warmup_iters
     elif step < decay_start:
@@ -111,7 +111,13 @@ def main():
     # Count parameters
     num_params = sum(p.numel() for p in model.parameters())
     print0(f"Model parameters: {num_params:,} ({num_params/1e6:.1f}M)")
-    
+
+    # Auto iterations from Chinchilla ratio (~10x data:param)
+    if args.num_iterations == -1:
+        target_tokens = 10 * num_params
+        args.num_iterations = max(1000, target_tokens // args.total_batch_size)
+        print0(f"Auto iterations: {args.num_iterations} (10x Chinchilla, {target_tokens/1e9:.1f}B tokens)")
+
     # Compile model
     if device_type == "cuda":
         print0("Compiling model with torch.compile()...")

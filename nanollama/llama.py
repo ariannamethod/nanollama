@@ -197,7 +197,7 @@ class Llama(nn.Module):
     @torch.no_grad()
     def init_weights(self):
         """Initialize weights following Llama conventions."""
-        nn.init.normal_(self.tok_embeddings.weight, mean=0.0, std=1.0)
+        nn.init.normal_(self.tok_embeddings.weight, mean=0.0, std=self.config.n_embd ** -0.5)
         nn.init.normal_(self.output.weight, mean=0.0, std=0.001)
         s = (3 ** 0.5) * (self.config.n_embd ** -0.5)
         for layer in self.layers:
@@ -264,7 +264,7 @@ class Llama(nn.Module):
         ]
         for shape in sorted({p.shape for p in matrix_params}):
             group = [p for p in matrix_params if p.shape == shape]
-            param_groups.append(dict(kind='muon', params=group, lr=matrix_lr,
+            param_groups.append(dict(kind='muon', params=group, lr=matrix_lr * scale,
                                      momentum=0.95, ns_steps=5, beta2=0.95, weight_decay=weight_decay))
         
         optimizer = (DistMuonAdamW if ddp else MuonAdamW)(param_groups)
