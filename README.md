@@ -94,24 +94,33 @@ Model definition: `nanollama/llama.py` (~300 lines).
 
 ## Training Corpus
 
-**Base corpus: [FineWeb-Edu](https://huggingface.co/datasets/HuggingFaceFW/fineweb-edu)** — a 1.3T token subset of Common Crawl filtered for educational content. We use the `sample-10BT` split and stream N samples depending on model size (200K for nano, up to 10M for large).
+Two corpus modes, selected automatically by model size (override with `--corpus`):
 
-The tokenizer is [SentencePiece](https://github.com/google/sentencepiece) BPE trained on the first batch of downloaded data. Vocabulary size: 32,000 tokens + 13 special tokens (chat template markers, BOS, code delimiters).
+**nano/micro → FineWeb-Edu only.** [FineWeb-Edu](https://huggingface.co/datasets/HuggingFaceFW/fineweb-edu) is a 1.3T token subset of Common Crawl filtered for educational content. Small models don't have the capacity for multi-domain learning, so pure web text is the right choice.
 
-Data preparation downloads, tokenizes, and shards into memory-mapped binary files (`uint16` token IDs, 10M tokens per shard). No HuggingFace datasets library is needed at training time — only for the initial download.
+**mini+ → Multi-corpus (SmolLM2 recipe).** Four components mixed at the dataloader level:
 
-**Personality corpus** is a JSONL file with instruction/response pairs (or `messages` array, or plain text). During training, a configurable fraction of each batch (default 20%) is replaced with personality data. This is mixed at the dataloader level — same model, same optimizer, same schedule. No separate fine-tuning stage.
+| Component | Ratio | Source | Why |
+|-----------|-------|--------|-----|
+| [FineWeb-Edu](https://huggingface.co/datasets/HuggingFaceFW/fineweb-edu) | 55% | Educational web text | General knowledge |
+| [DCLM-Baseline](https://huggingface.co/datasets/mlfoundations/dclm-baseline-1.0) | 25% | Curated web corpus | Diversity |
+| [The Stack v2](https://huggingface.co/datasets/bigcode/the-stack-v2-dedup) | 10% | Code (permissive licenses) | Reasoning structure |
+| [MegaMath](https://huggingface.co/datasets/MHHMM/MegaMath) | 10% | Mathematical reasoning | Quantitative ability |
 
-**Recommended data volumes:**
+The tokenizer is [SentencePiece](https://github.com/google/sentencepiece) BPE trained on FineWeb-Edu. Vocabulary: 32,000 tokens + 13 special tokens (chat markers, BOS, code delimiters). All data is tokenized into memory-mapped binary shards (`uint16`, 10M tokens per shard). HuggingFace `datasets` is needed only for the initial download — not at training time.
 
-| Size | FineWeb samples | Approx tokens | Personality pairs |
-|------|----------------|---------------|-------------------|
-| nano | 200K | ~50M | 500–2K |
-| micro | 500K | ~125M | 1K–5K |
-| mini | 1M | ~250M | 2K–10K |
-| small | 3M | ~750M | 5K–20K |
-| medium | 10M | ~2.5B | 10K–50K |
-| large | 10M | ~2.5B | 20K–100K |
+**Personality corpus** is a JSONL file with instruction/response pairs (or `messages` array, or plain text). A configurable fraction of each batch (default 20%) is replaced with personality data. Mixed at the dataloader level — same model, same optimizer, same schedule. No separate fine-tuning stage.
+
+**Data by model size:**
+
+| Size | Corpus | Data | Personality pairs |
+|------|--------|------|-------------------|
+| nano | FineWeb-Edu | 200K samples (~50M tok) | 500–2K |
+| micro | FineWeb-Edu | 500K samples (~125M tok) | 1K–5K |
+| mini | Multi-corpus | 250M tokens | 2K–10K |
+| small | Multi-corpus | 750M tokens | 5K–20K |
+| medium | Multi-corpus | 2.5B tokens | 10K–50K |
+| large | Multi-corpus | 5B tokens | 20K–100K |
 
 ---
 
@@ -208,10 +217,11 @@ cd go && go build -o nanollama .
 # One-time setup
 bash runs/lambda_setup.sh
 
-# Train any size
+# Train any size (auto-selects corpus: FineWeb for nano/micro, multi for mini+)
 bash runs/lambda_train.sh --name mini
 bash runs/lambda_train.sh --name mini --personality data.jsonl
-bash runs/lambda_train.sh --name small --steps 10000 --samples 2000000
+bash runs/lambda_train.sh --name small --steps 15000
+bash runs/lambda_train.sh --name mini --corpus fineweb --samples 1000000  # override corpus
 ```
 
 > **Note:** Avoid H100 instances — driver bug (Error 802) confirmed as of Feb 2026. Use A100.

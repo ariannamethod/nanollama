@@ -8,22 +8,36 @@
 # Usage:
 #   bash runs/lambda_train.sh --name mini
 #   bash runs/lambda_train.sh --name mini --personality data.jsonl
-#   bash runs/lambda_train.sh --name small --steps 15000 --samples 3000000
+#   bash runs/lambda_train.sh --name small --steps 15000
 #   bash runs/lambda_train.sh --name nano --base-only
+#   bash runs/lambda_train.sh --name mini --corpus fineweb   # override corpus
 #
 # Model sizes:
 #   nano(34M)  micro(69M)  mini(150M)  small(336M)  medium(1.6B)  large(3.7B)
+#
+# Data corpus:
+#   nano/micro  → FineWeb-Edu only (small models, simple data)
+#   mini+       → Multi-corpus SmolLM2 recipe:
+#                  FineWeb-Edu 55%, DCLM 25%, Stack v2 10%, MegaMath 10%
 #
 # =============================================================================
 
 set -e
 
-# ---- Size configs: DEPTH / STEPS / BATCH / SAMPLES ----
+# ---- Size configs ----
+#                        DEPTH    STEPS     BATCH       PARAMS
 declare -A CFG_DEPTH=(   [nano]=6    [micro]=12   [mini]=16    [small]=24   [medium]=28    [large]=32   )
 declare -A CFG_STEPS=(   [nano]=5000 [micro]=10000 [mini]=10000 [small]=10000 [medium]=15000 [large]=20000 )
 declare -A CFG_BATCH=(   [nano]=262144 [micro]=524288 [mini]=524288 [small]=524288 [medium]=1048576 [large]=1048576 )
-declare -A CFG_SAMPLES=( [nano]=200000 [micro]=500000 [mini]=1000000 [small]=3000000 [medium]=10000000 [large]=10000000 )
 declare -A CFG_PARAMS=(  [nano]="34M" [micro]="69M" [mini]="150M" [small]="336M" [medium]="1.6B" [large]="3.7B" )
+
+# ---- Data configs ----
+# nano/micro: FineWeb-Edu samples (simple, fast)
+declare -A CFG_SAMPLES=( [nano]=200000 [micro]=500000 )
+# mini+: Multi-corpus total tokens (SmolLM2 recipe)
+declare -A CFG_TOKENS=(  [mini]="250M" [small]="750M" [medium]="2500M" [large]="5000M" )
+# Default corpus per size
+declare -A CFG_CORPUS=(  [nano]="fineweb" [micro]="fineweb" [mini]="multi" [small]="multi" [medium]="multi" [large]="multi" )
 
 # ---- Parse arguments ----
 NAME=""
@@ -31,7 +45,9 @@ PERSONALITY_FILE=""
 PERSONALITY_RATIO=0.20
 STEPS_OVERRIDE=""
 SAMPLES_OVERRIDE=""
+TOKENS_OVERRIDE=""
 TAG_SUFFIX=""
+CORPUS_OVERRIDE=""
 BASE_ONLY=false
 SAVE_EVERY=1000
 USE_WANDB=false
@@ -43,7 +59,9 @@ while [[ $# -gt 0 ]]; do
         --ratio)       PERSONALITY_RATIO="$2"; shift 2 ;;
         --steps)       STEPS_OVERRIDE="$2";    shift 2 ;;
         --samples)     SAMPLES_OVERRIDE="$2";  shift 2 ;;
+        --tokens)      TOKENS_OVERRIDE="$2";   shift 2 ;;
         --tag)         TAG_SUFFIX="$2";        shift 2 ;;
+        --corpus)      CORPUS_OVERRIDE="$2";   shift 2 ;;
         --base-only)   BASE_ONLY=true;         shift ;;
         --save-every)  SAVE_EVERY="$2";        shift 2 ;;
         --wandb)       USE_WANDB=true;         shift ;;
@@ -58,25 +76,34 @@ Optional:
   --personality <file>   JSONL for personality training + gamma extraction
   --ratio <0.0-1.0>      Personality data ratio in batches (default: 0.20)
   --steps <N>            Override training steps
-  --samples <N>          Override FineWeb-Edu sample count
+  --corpus <type>        fineweb or multi (default: auto by size)
+  --samples <N>          Override FineWeb-Edu sample count (fineweb corpus)
+  --tokens <N>           Override total tokens, e.g. 500M (multi corpus)
   --tag <suffix>         Custom tag for checkpoints (default: model name)
   --base-only            Skip personality pipeline, train base only
   --save-every <N>       Checkpoint interval (default: 1000)
   --wandb                Enable wandb logging
 
 Sizes:
-  nano     34M   depth=6   ~20 min   1x GPU    200K samples
-  micro    69M   depth=12  ~40 min   1x GPU    500K samples
-  mini    150M   depth=16  ~3 hrs    1x GPU      1M samples
-  small   336M   depth=24  ~18 hrs   1x GPU      3M samples
-  medium  1.6B   depth=28  ~48 hrs   4x+ GPU    10M samples
-  large   3.7B   depth=32  ~96 hrs   8x GPU     10M samples
+  nano     34M   depth=6   ~20 min   1x GPU    FineWeb-Edu 200K
+  micro    69M   depth=12  ~40 min   1x GPU    FineWeb-Edu 500K
+  mini    150M   depth=16  ~3 hrs    1x GPU    Multi-corpus 250M tokens
+  small   336M   depth=24  ~18 hrs   1x GPU    Multi-corpus 750M tokens
+  medium  1.6B   depth=28  ~48 hrs   4x+ GPU   Multi-corpus 2.5B tokens
+  large   3.7B   depth=32  ~96 hrs   8x GPU    Multi-corpus 5B tokens
+
+Multi-corpus (SmolLM2 recipe, mini+ default):
+  FineWeb-Edu 55%  — educational web text
+  DCLM 25%         — curated web corpus
+  Stack v2 10%     — code (deduped, permissive)
+  MegaMath 10%     — mathematical reasoning
 
 Examples:
   bash runs/lambda_train.sh --name mini
   bash runs/lambda_train.sh --name mini --personality wtforacle.jsonl
-  bash runs/lambda_train.sh --name small --steps 15000 --samples 3000000
+  bash runs/lambda_train.sh --name small --steps 15000
   bash runs/lambda_train.sh --name nano --base-only
+  bash runs/lambda_train.sh --name mini --corpus fineweb --samples 1000000
 HELP
             exit 0 ;;
         *) echo "Unknown option: $1"; exit 1 ;;
@@ -98,9 +125,9 @@ fi
 DEPTH=${CFG_DEPTH[$NAME]}
 NUM_STEPS=${STEPS_OVERRIDE:-${CFG_STEPS[$NAME]}}
 BATCH_SIZE=${CFG_BATCH[$NAME]}
-NUM_SAMPLES=${SAMPLES_OVERRIDE:-${CFG_SAMPLES[$NAME]}}
 TAG=${TAG_SUFFIX:-$NAME}
 PARAMS=${CFG_PARAMS[$NAME]}
+CORPUS=${CORPUS_OVERRIDE:-${CFG_CORPUS[$NAME]}}
 
 WANDB_FLAG=""
 $USE_WANDB && WANDB_FLAG="--wandb"
@@ -115,7 +142,15 @@ echo "  nanollama — $NAME ($PARAMS, depth=$DEPTH)"
 echo "========================================================"
 echo "  Steps:       $NUM_STEPS"
 echo "  Batch:       $BATCH_SIZE tokens"
-echo "  FineWeb:     $NUM_SAMPLES samples"
+if [ "$CORPUS" = "multi" ]; then
+    TOTAL_TOKENS=${TOKENS_OVERRIDE:-${CFG_TOKENS[$NAME]}}
+    echo "  Corpus:      multi (SmolLM2: FineWeb 55% + DCLM 25% + Code 10% + Math 10%)"
+    echo "  Data:        $TOTAL_TOKENS tokens"
+else
+    NUM_SAMPLES=${SAMPLES_OVERRIDE:-${CFG_SAMPLES[$NAME]:-500000}}
+    echo "  Corpus:      FineWeb-Edu"
+    echo "  Data:        $NUM_SAMPLES samples"
+fi
 echo "  GPUs:        $NUM_GPUS x $GPU_NAME"
 echo "  Save every:  $SAVE_EVERY steps"
 if [ -n "$PERSONALITY_FILE" ] && ! $BASE_ONLY; then
@@ -197,16 +232,40 @@ run_training() {
 }
 
 # =====================================================================
-# Step 1: Prepare FineWeb-Edu data
+# Step 1: Prepare training data
 # =====================================================================
-DATA_DIR="$BASE_DIR/data/fineweb"
-SHARD_COUNT=$(ls "$DATA_DIR"/*.bin 2>/dev/null | wc -l || echo 0)
+if [ "$CORPUS" = "multi" ]; then
+    # Multi-corpus (SmolLM2 recipe): FineWeb 55% + DCLM 25% + Stack 10% + MegaMath 10%
+    DATA_DIR="$BASE_DIR/data/multi_corpus/merged"
+    MULTI_DIR="$BASE_DIR/data/multi_corpus"
 
-if [ "$SHARD_COUNT" -lt 3 ]; then
-    echo ">> Step 1: Downloading FineWeb-Edu ($NUM_SAMPLES samples)..."
-    python -u -m data.prepare_fineweb --num-samples $NUM_SAMPLES
+    # Check if tokenizer exists (needed before multi_corpus)
+    if [ ! -f "$TOKENIZER" ]; then
+        echo ">> Step 1a: Training tokenizer on FineWeb-Edu (50K samples)..."
+        python -u -m data.prepare_fineweb --num-samples 50000
+    fi
+
+    SHARD_COUNT=$(ls "$DATA_DIR"/*.bin 2>/dev/null | wc -l || echo 0)
+    if [ "$SHARD_COUNT" -lt 3 ]; then
+        echo ">> Step 1: Preparing multi-corpus data ($TOTAL_TOKENS tokens)..."
+        echo "   FineWeb-Edu 55% + DCLM 25% + Stack v2 10% + MegaMath 10%"
+        python -u -m data.prepare_multi_corpus \
+            --total-tokens "$TOTAL_TOKENS" \
+            --components fineweb,dclm,stack,megamath
+    else
+        echo ">> Step 1: Multi-corpus data exists ($SHARD_COUNT shards) — skip"
+    fi
 else
-    echo ">> Step 1: FineWeb-Edu exists ($SHARD_COUNT shards) — skip"
+    # FineWeb-Edu only (nano/micro)
+    DATA_DIR="$BASE_DIR/data/fineweb"
+    SHARD_COUNT=$(ls "$DATA_DIR"/*.bin 2>/dev/null | wc -l || echo 0)
+
+    if [ "$SHARD_COUNT" -lt 3 ]; then
+        echo ">> Step 1: Downloading FineWeb-Edu ($NUM_SAMPLES samples)..."
+        python -u -m data.prepare_fineweb --num-samples $NUM_SAMPLES
+    else
+        echo ">> Step 1: FineWeb-Edu data exists ($SHARD_COUNT shards) — skip"
+    fi
 fi
 
 # =====================================================================
@@ -242,7 +301,12 @@ echo "  Step 3: Training BASE model"
 echo "========================================================"
 
 BASE_TAG="${TAG}_base"
-run_training "$BASE_TAG" "train_${TAG}_base.log" --personality-ratio=0.0
+TRAIN_ARGS=(--personality-ratio=0.0)
+
+# Point to correct data directory
+[ "$CORPUS" = "multi" ] && TRAIN_ARGS+=(--data-dir="$DATA_DIR")
+
+run_training "$BASE_TAG" "train_${TAG}_base.log" "${TRAIN_ARGS[@]}"
 
 # =====================================================================
 # Base-only mode: export and exit
@@ -287,9 +351,13 @@ echo "  Step 4: Training PERSONALITY model (ratio=$PERSONALITY_RATIO)"
 echo "========================================================"
 
 PERS_TAG="${TAG}_personality"
-run_training "$PERS_TAG" "train_${TAG}_personality.log" \
-    --personality-dir="$BASE_DIR/data/personality" \
+PERS_ARGS=(
+    --personality-dir="$BASE_DIR/data/personality"
     --personality-ratio=$PERSONALITY_RATIO
+)
+[ "$CORPUS" = "multi" ] && PERS_ARGS+=(--data-dir="$DATA_DIR")
+
+run_training "$PERS_TAG" "train_${TAG}_personality.log" "${PERS_ARGS[@]}"
 
 # =====================================================================
 # Step 5: Extract gamma
