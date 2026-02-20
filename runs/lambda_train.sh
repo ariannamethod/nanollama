@@ -1,72 +1,89 @@
 #!/bin/bash
-# Universal nanollama training script for Lambda Cloud
+# =============================================================================
+# nanollama — Universal Training Pipeline
 #
-# One script to train any model size with optional personality injection.
-# Handles setup, data prep, training, gamma extraction, and GGUF export.
+# One command to train any Llama 3 model from scratch on Lambda Cloud.
+# Handles: data prep → base training → personality training → gamma → GGUF.
 #
 # Usage:
-#   bash runs/lambda_train.sh --name mini                          # base only
-#   bash runs/lambda_train.sh --name mini --personality data.jsonl  # base + personality + gamma
-#   bash runs/lambda_train.sh --name micro --steps 3000             # override steps
+#   bash runs/lambda_train.sh --name mini
+#   bash runs/lambda_train.sh --name mini --personality data.jsonl
+#   bash runs/lambda_train.sh --name small --steps 15000 --samples 3000000
+#   bash runs/lambda_train.sh --name nano --base-only
 #
-# The --name parameter selects from predefined configs:
-#   nano(34M), micro(69M), mini(150M), small(336M), medium(1.6B), large(3.7B)
+# Model sizes:
+#   nano(34M)  micro(69M)  mini(150M)  small(336M)  medium(1.6B)  large(3.7B)
+#
+# =============================================================================
 
 set -e
 
-# ============================================================
-# Config tables — one row per model size
-# Columns: DEPTH, STEPS, BATCH, SAMPLES, GPU_NOTE
-# ============================================================
-declare -A CFG_DEPTH=( [nano]=6 [micro]=12 [mini]=16 [small]=24 [medium]=28 [large]=32 )
-declare -A CFG_STEPS=( [nano]=1000 [micro]=5000 [mini]=10000 [small]=20000 [medium]=50000 [large]=100000 )
-declare -A CFG_BATCH=( [nano]=65536 [micro]=131072 [mini]=262144 [small]=524288 [medium]=1048576 [large]=2097152 )
+# ---- Size configs: DEPTH / STEPS / BATCH / SAMPLES ----
+declare -A CFG_DEPTH=(   [nano]=6    [micro]=12   [mini]=16    [small]=24   [medium]=28    [large]=32   )
+declare -A CFG_STEPS=(   [nano]=5000 [micro]=10000 [mini]=10000 [small]=10000 [medium]=15000 [large]=20000 )
+declare -A CFG_BATCH=(   [nano]=262144 [micro]=524288 [mini]=524288 [small]=524288 [medium]=1048576 [large]=1048576 )
 declare -A CFG_SAMPLES=( [nano]=200000 [micro]=500000 [mini]=1000000 [small]=3000000 [medium]=10000000 [large]=10000000 )
+declare -A CFG_PARAMS=(  [nano]="34M" [micro]="69M" [mini]="150M" [small]="336M" [medium]="1.6B" [large]="3.7B" )
 
-# ============================================================
-# Parse arguments
-# ============================================================
+# ---- Parse arguments ----
 NAME=""
 PERSONALITY_FILE=""
 PERSONALITY_RATIO=0.20
 STEPS_OVERRIDE=""
 SAMPLES_OVERRIDE=""
 TAG_SUFFIX=""
+BASE_ONLY=false
+SAVE_EVERY=1000
 USE_WANDB=false
 
 while [[ $# -gt 0 ]]; do
     case $1 in
-        --name)       NAME="$2"; shift 2 ;;
-        --personality) PERSONALITY_FILE="$2"; shift 2 ;;
-        --ratio)      PERSONALITY_RATIO="$2"; shift 2 ;;
-        --steps)      STEPS_OVERRIDE="$2"; shift 2 ;;
-        --samples)    SAMPLES_OVERRIDE="$2"; shift 2 ;;
-        --tag)        TAG_SUFFIX="$2"; shift 2 ;;
-        --wandb)      USE_WANDB=true; shift ;;
-        --help|-h)
-            echo "Usage: bash runs/lambda_train.sh --name <size> [options]"
-            echo ""
-            echo "Required:"
-            echo "  --name <size>        Model size: nano, micro, mini, small, medium, large"
-            echo ""
-            echo "Optional:"
-            echo "  --personality <file>  JSONL file for personality training + gamma extraction"
-            echo "  --ratio <0.0-1.0>    Personality data ratio (default: 0.20)"
-            echo "  --steps <N>          Override training steps"
-            echo "  --samples <N>        Override num FineWeb samples for data prep"
-            echo "  --tag <suffix>       Custom tag suffix (default: model name)"
-            echo "  --wandb              Enable wandb logging (must be logged in)"
-            echo ""
-            echo "Examples:"
-            echo "  bash runs/lambda_train.sh --name mini"
-            echo "  bash runs/lambda_train.sh --name mini --personality wtforacle.jsonl"
-            echo "  bash runs/lambda_train.sh --name micro --steps 3000 --samples 300000"
-            exit 0
-            ;;
+        --name)        NAME="$2";              shift 2 ;;
+        --personality) PERSONALITY_FILE="$2";   shift 2 ;;
+        --ratio)       PERSONALITY_RATIO="$2"; shift 2 ;;
+        --steps)       STEPS_OVERRIDE="$2";    shift 2 ;;
+        --samples)     SAMPLES_OVERRIDE="$2";  shift 2 ;;
+        --tag)         TAG_SUFFIX="$2";        shift 2 ;;
+        --base-only)   BASE_ONLY=true;         shift ;;
+        --save-every)  SAVE_EVERY="$2";        shift 2 ;;
+        --wandb)       USE_WANDB=true;         shift ;;
+        -h|--help)
+            cat <<'HELP'
+Usage: bash runs/lambda_train.sh --name <size> [options]
+
+Required:
+  --name <size>          nano, micro, mini, small, medium, large
+
+Optional:
+  --personality <file>   JSONL for personality training + gamma extraction
+  --ratio <0.0-1.0>      Personality data ratio in batches (default: 0.20)
+  --steps <N>            Override training steps
+  --samples <N>          Override FineWeb-Edu sample count
+  --tag <suffix>         Custom tag for checkpoints (default: model name)
+  --base-only            Skip personality pipeline, train base only
+  --save-every <N>       Checkpoint interval (default: 1000)
+  --wandb                Enable wandb logging
+
+Sizes:
+  nano     34M   depth=6   ~20 min   1x GPU    200K samples
+  micro    69M   depth=12  ~40 min   1x GPU    500K samples
+  mini    150M   depth=16  ~3 hrs    1x GPU      1M samples
+  small   336M   depth=24  ~18 hrs   1x GPU      3M samples
+  medium  1.6B   depth=28  ~48 hrs   4x+ GPU    10M samples
+  large   3.7B   depth=32  ~96 hrs   8x GPU     10M samples
+
+Examples:
+  bash runs/lambda_train.sh --name mini
+  bash runs/lambda_train.sh --name mini --personality wtforacle.jsonl
+  bash runs/lambda_train.sh --name small --steps 15000 --samples 3000000
+  bash runs/lambda_train.sh --name nano --base-only
+HELP
+            exit 0 ;;
         *) echo "Unknown option: $1"; exit 1 ;;
     esac
 done
 
+# ---- Validate ----
 if [ -z "$NAME" ]; then
     echo "ERROR: --name is required. Use --help for usage."
     exit 1
@@ -77,45 +94,49 @@ if [ -z "${CFG_DEPTH[$NAME]}" ]; then
     exit 1
 fi
 
-# Resolve config
+# ---- Resolve config ----
 DEPTH=${CFG_DEPTH[$NAME]}
 NUM_STEPS=${STEPS_OVERRIDE:-${CFG_STEPS[$NAME]}}
 BATCH_SIZE=${CFG_BATCH[$NAME]}
 NUM_SAMPLES=${SAMPLES_OVERRIDE:-${CFG_SAMPLES[$NAME]}}
 TAG=${TAG_SUFFIX:-$NAME}
+PARAMS=${CFG_PARAMS[$NAME]}
 
 WANDB_FLAG=""
-if $USE_WANDB; then
-    WANDB_FLAG="--wandb"
+$USE_WANDB && WANDB_FLAG="--wandb"
+
+# ---- GPU detection ----
+NUM_GPUS=$(nvidia-smi --list-gpus 2>/dev/null | wc -l || echo 0)
+GPU_NAME=$(nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null | head -1 || echo "unknown")
+
+echo ""
+echo "========================================================"
+echo "  nanollama — $NAME ($PARAMS, depth=$DEPTH)"
+echo "========================================================"
+echo "  Steps:       $NUM_STEPS"
+echo "  Batch:       $BATCH_SIZE tokens"
+echo "  FineWeb:     $NUM_SAMPLES samples"
+echo "  GPUs:        $NUM_GPUS x $GPU_NAME"
+echo "  Save every:  $SAVE_EVERY steps"
+if [ -n "$PERSONALITY_FILE" ] && ! $BASE_ONLY; then
+    echo "  Personality: $PERSONALITY_FILE (ratio=$PERSONALITY_RATIO)"
+    echo "  Pipeline:    base → personality → gamma → GGUF"
+else
+    echo "  Pipeline:    base → GGUF"
 fi
+echo "========================================================"
+echo ""
 
-echo "========================================"
-echo "  nanollama — ${NAME} training"
-echo "  depth=$DEPTH, steps=$NUM_STEPS, batch=$BATCH_SIZE"
-echo "  samples=$NUM_SAMPLES, personality_ratio=$PERSONALITY_RATIO"
-if [ -n "$PERSONALITY_FILE" ]; then
-    echo "  personality: $PERSONALITY_FILE"
-fi
-echo "========================================"
-
-# ============================================================
-# GPU detection
-# ============================================================
-NUM_GPUS=$(nvidia-smi --list-gpus | wc -l)
-echo "GPUs: $NUM_GPUS × $(nvidia-smi --query-gpu=name --format=csv,noheader | head -1)"
-
-if nvidia-smi --query-gpu=name --format=csv,noheader | grep -q "H100"; then
-    echo ""
+# H100 warning
+if echo "$GPU_NAME" | grep -qi "H100"; then
     echo "WARNING: H100 detected — known driver bug (Error 802, Feb 2026)."
-    echo "Training may fail. Use A100 instead."
-    echo ""
+    echo "A100 recommended. Ctrl+C to abort."
+    sleep 5
 fi
 
-# ============================================================
-# Navigate to repo root
-# ============================================================
+# ---- Navigate to repo ----
 if [ -f "pyproject.toml" ] && [ -d "nanollama" ]; then
-    echo "Already in nanollama repo"
+    : # already in repo root
 elif [ -d "nanollama" ] && [ -f "nanollama/pyproject.toml" ]; then
     cd nanollama
 else
@@ -124,142 +145,121 @@ else
     cd nanollama
 fi
 
-echo "Working directory: $(pwd)"
-
-# ============================================================
-# Install deps
-# ============================================================
+# ---- Install deps ----
 pip install sentencepiece numpy tqdm datasets filelock 2>/dev/null
 pip install . 2>/dev/null || true
 
-# ============================================================
-# Step 1: Prepare FineWeb-Edu data
-# ============================================================
-DATA_DIR="$HOME/.cache/nanollama/data/fineweb"
-SHARD_COUNT=$(ls "$DATA_DIR"/*.bin 2>/dev/null | wc -l)
-
-if [ "$SHARD_COUNT" -lt 3 ]; then
-    echo ""
-    echo "========================================"
-    echo "  Step 1: Preparing FineWeb-Edu ($NUM_SAMPLES samples)"
-    echo "========================================"
-    python -u -m data.prepare_fineweb --num-samples $NUM_SAMPLES
-else
-    echo ""
-    echo "Step 1: FineWeb-Edu data exists ($SHARD_COUNT shards), skipping"
-fi
-
-# ============================================================
-# Step 2: Prepare personality data (if provided)
-# ============================================================
-PERSONALITY_DIR=""
-PERSONALITY_ARGS=""
-
-if [ -n "$PERSONALITY_FILE" ]; then
-    PERSONALITY_DIR="$HOME/.cache/nanollama/data/personality"
-
-    # Find personality file
-    if [ -f "$PERSONALITY_FILE" ]; then
-        PERSONALITY_INPUT="$PERSONALITY_FILE"
-    elif [ -f "$HOME/$PERSONALITY_FILE" ]; then
-        PERSONALITY_INPUT="$HOME/$PERSONALITY_FILE"
-    else
-        echo "ERROR: Cannot find personality file: $PERSONALITY_FILE"
-        exit 1
-    fi
-
-    echo ""
-    echo "========================================"
-    echo "  Step 2: Preparing personality data"
-    echo "========================================"
-    python -u -m data.prepare_personality --input "$PERSONALITY_INPUT" --output-dir "$PERSONALITY_DIR"
-
-    PERSONALITY_ARGS="--personality-dir=$PERSONALITY_DIR --personality-ratio=$PERSONALITY_RATIO"
-fi
-
-# ============================================================
-# Training helper function
-# ============================================================
-run_training() {
-    local RUN_TAG="$1"
-    local EXTRA_ARGS="$2"
-    local LOG_FILE="$3"
-
-    echo ""
-    echo "========================================"
-    echo "  Training: $RUN_TAG"
-    echo "  depth=$DEPTH, steps=$NUM_STEPS, batch=$BATCH_SIZE"
-    echo "========================================"
-
-    if [ "$NUM_GPUS" -gt 1 ]; then
-        echo "Multi-GPU: $NUM_GPUS GPUs"
-        OMP_NUM_THREADS=1 torchrun --standalone --nproc_per_node=$NUM_GPUS -m scripts.base_train \
-            --depth=$DEPTH \
-            --run="$RUN_TAG" \
-            --model-tag="$RUN_TAG" \
-            --total-batch-size=$BATCH_SIZE \
-            --num-iterations=$NUM_STEPS \
-            --save-every=1000 \
-            $EXTRA_ARGS \
-            $WANDB_FLAG \
-            2>&1 | tee "$LOG_FILE"
-    else
-        python -u -m scripts.base_train \
-            --depth=$DEPTH \
-            --run="$RUN_TAG" \
-            --model-tag="$RUN_TAG" \
-            --total-batch-size=$BATCH_SIZE \
-            --num-iterations=$NUM_STEPS \
-            --save-every=1000 \
-            $EXTRA_ARGS \
-            $WANDB_FLAG \
-            2>&1 | tee "$LOG_FILE"
-    fi
-}
-
-# ============================================================
-# Step 3: Train
-# ============================================================
+# ---- Directories ----
 BASE_DIR="$HOME/.cache/nanollama"
 TOKENIZER="$BASE_DIR/tokenizer/tokenizer.model"
 
-if [ -n "$PERSONALITY_FILE" ]; then
-    # Two-pass: base + personality, then gamma extraction
-    run_training "${TAG}_base" "--personality-ratio=0.0" "train_base.log"
-    run_training "${TAG}_personality" "$PERSONALITY_ARGS" "train_personality.log"
+# ---- Helper: find last checkpoint for a model tag ----
+find_last_checkpoint() {
+    local tag="$1"
+    local ckpt_dir="$BASE_DIR/checkpoints/$tag"
+    ls -1 "$ckpt_dir"/checkpoint_step*.pt 2>/dev/null \
+        | sed 's/.*checkpoint_step\([0-9]*\)\.pt/\1 &/' \
+        | sort -n \
+        | tail -1 \
+        | awk '{print $2}'
+}
 
-    BASE_CKPT="$BASE_DIR/checkpoints/${TAG}_base/checkpoint.pt"
-    PERSONALITY_CKPT="$BASE_DIR/checkpoints/${TAG}_personality/checkpoint.pt"
+# ---- Helper: run training ----
+run_training() {
+    local model_tag="$1"
+    local log_file="$2"
+    shift 2
+    # remaining args passed through
 
-    # ============================================================
-    # Step 4: Extract gamma
-    # ============================================================
     echo ""
-    echo "========================================"
-    echo "  Extracting gamma"
-    echo "========================================"
-    mkdir -p weights
-    GAMMA_OUTPUT="weights/gamma_${TAG}_d${DEPTH}.npz"
-
-    python -u -m scripts.extract_gamma \
-        --personality_ckpt "$PERSONALITY_CKPT" \
-        --base_ckpt "$BASE_CKPT" \
-        --output "$GAMMA_OUTPUT"
-
-    # ============================================================
-    # Step 5: Export GGUF
-    # ============================================================
+    echo "  Training: $model_tag"
+    echo "  depth=$DEPTH, steps=$NUM_STEPS, batch=$BATCH_SIZE"
     echo ""
-    echo "========================================"
+
+    local cmd_args=(
+        --depth=$DEPTH
+        --run="$model_tag"
+        --model-tag="$model_tag"
+        --total-batch-size=$BATCH_SIZE
+        --num-iterations=$NUM_STEPS
+        --save-every=$SAVE_EVERY
+        "$@"
+    )
+
+    [ -n "$WANDB_FLAG" ] && cmd_args+=($WANDB_FLAG)
+
+    if [ "$NUM_GPUS" -gt 1 ]; then
+        OMP_NUM_THREADS=1 torchrun --standalone --nproc_per_node=$NUM_GPUS \
+            -m scripts.base_train "${cmd_args[@]}" 2>&1 | tee "$log_file"
+    else
+        python -u -m scripts.base_train "${cmd_args[@]}" 2>&1 | tee "$log_file"
+    fi
+}
+
+# =====================================================================
+# Step 1: Prepare FineWeb-Edu data
+# =====================================================================
+DATA_DIR="$BASE_DIR/data/fineweb"
+SHARD_COUNT=$(ls "$DATA_DIR"/*.bin 2>/dev/null | wc -l || echo 0)
+
+if [ "$SHARD_COUNT" -lt 3 ]; then
+    echo ">> Step 1: Downloading FineWeb-Edu ($NUM_SAMPLES samples)..."
+    python -u -m data.prepare_fineweb --num-samples $NUM_SAMPLES
+else
+    echo ">> Step 1: FineWeb-Edu exists ($SHARD_COUNT shards) — skip"
+fi
+
+# =====================================================================
+# Step 2: Prepare personality data (if provided)
+# =====================================================================
+if [ -n "$PERSONALITY_FILE" ] && ! $BASE_ONLY; then
+    # Find personality file
+    PERSONALITY_INPUT=""
+    for path in "$PERSONALITY_FILE" "data/$PERSONALITY_FILE" "$HOME/$PERSONALITY_FILE"; do
+        [ -f "$path" ] && PERSONALITY_INPUT="$path" && break
+    done
+
+    if [ -z "$PERSONALITY_INPUT" ]; then
+        echo "ERROR: Cannot find personality file: $PERSONALITY_FILE"
+        echo "Upload first: scp <file> ubuntu@<ip>:~/"
+        exit 1
+    fi
+
+    echo ">> Step 2: Preparing personality data ($PERSONALITY_INPUT)..."
+    python -u -m data.prepare_personality \
+        --input "$PERSONALITY_INPUT" \
+        --output-dir "$BASE_DIR/data/personality"
+else
+    echo ">> Step 2: No personality file — skip"
+fi
+
+# =====================================================================
+# Step 3: Train BASE model (no personality)
+# =====================================================================
+echo ""
+echo "========================================================"
+echo "  Step 3: Training BASE model"
+echo "========================================================"
+
+BASE_TAG="${TAG}_base"
+run_training "$BASE_TAG" "train_${TAG}_base.log" --personality-ratio=0.0
+
+# =====================================================================
+# Base-only mode: export and exit
+# =====================================================================
+if $BASE_ONLY || [ -z "$PERSONALITY_FILE" ]; then
+    echo ""
+    echo "========================================================"
     echo "  Exporting to GGUF"
-    echo "========================================"
+    echo "========================================================"
 
-    python -u -m scripts.export_gguf \
-        --checkpoint "$PERSONALITY_CKPT" \
-        --tokenizer "$TOKENIZER" \
-        --output "weights/${TAG}-personality-f16.gguf" \
-        --dtype f16
+    BASE_CKPT=$(find_last_checkpoint "$BASE_TAG")
+    if [ -z "$BASE_CKPT" ]; then
+        echo "ERROR: No checkpoint found for $BASE_TAG"
+        exit 1
+    fi
 
+    mkdir -p weights
     python -u -m scripts.export_gguf \
         --checkpoint "$BASE_CKPT" \
         --tokenizer "$TOKENIZER" \
@@ -267,41 +267,100 @@ if [ -n "$PERSONALITY_FILE" ]; then
         --dtype f16
 
     echo ""
-    echo "========================================"
-    echo "  DONE — ${NAME} with personality"
-    echo "========================================"
+    echo "========================================================"
+    echo "  DONE — $NAME base ($PARAMS)"
+    echo "========================================================"
     echo ""
-    echo "Artifacts:"
-    echo "  weights/${TAG}-personality-f16.gguf"
     echo "  weights/${TAG}-base-f16.gguf"
-    echo "  weights/${GAMMA_OUTPUT}"
-else
-    # Single pass: base model only
-    run_training "${TAG}" "" "train_base.log"
-
-    CKPT="$BASE_DIR/checkpoints/${TAG}/checkpoint.pt"
-
     echo ""
-    echo "========================================"
-    echo "  Exporting to GGUF"
-    echo "========================================"
-    mkdir -p weights
-
-    python -u -m scripts.export_gguf \
-        --checkpoint "$CKPT" \
-        --tokenizer "$TOKENIZER" \
-        --output "weights/${TAG}-f16.gguf" \
-        --dtype f16
-
-    echo ""
-    echo "========================================"
-    echo "  DONE — ${NAME} base"
-    echo "========================================"
-    echo ""
-    echo "Artifacts:"
-    echo "  weights/${TAG}-f16.gguf"
+    echo "  scp ubuntu@\$(hostname -I | awk '{print \$1}'):~/nanollama/weights/${TAG}-* ."
+    echo "  ./nanollama --model ${TAG}-base-f16.gguf --interactive"
+    exit 0
 fi
 
+# =====================================================================
+# Step 4: Train PERSONALITY model
+# =====================================================================
 echo ""
-echo "Download:"
-echo "  scp ubuntu@\$(hostname -I | awk '{print \$1}'):~/nanollama/weights/* ."
+echo "========================================================"
+echo "  Step 4: Training PERSONALITY model (ratio=$PERSONALITY_RATIO)"
+echo "========================================================"
+
+PERS_TAG="${TAG}_personality"
+run_training "$PERS_TAG" "train_${TAG}_personality.log" \
+    --personality-dir="$BASE_DIR/data/personality" \
+    --personality-ratio=$PERSONALITY_RATIO
+
+# =====================================================================
+# Step 5: Extract gamma
+# =====================================================================
+echo ""
+echo "========================================================"
+echo "  Step 5: Extracting gamma (personality - base)"
+echo "========================================================"
+
+BASE_CKPT=$(find_last_checkpoint "$BASE_TAG")
+PERS_CKPT=$(find_last_checkpoint "$PERS_TAG")
+
+if [ -z "$BASE_CKPT" ] || [ -z "$PERS_CKPT" ]; then
+    echo "ERROR: Cannot find checkpoints"
+    echo "  Base:        $BASE_CKPT"
+    echo "  Personality: $PERS_CKPT"
+    exit 1
+fi
+
+mkdir -p weights
+GAMMA_FILE="weights/gamma_${TAG}.npz"
+
+python -u -m scripts.extract_gamma \
+    --personality_ckpt "$PERS_CKPT" \
+    --base_ckpt "$BASE_CKPT" \
+    --output "$GAMMA_FILE"
+
+echo "Gamma: $GAMMA_FILE"
+
+# =====================================================================
+# Step 6: Export to GGUF
+# =====================================================================
+echo ""
+echo "========================================================"
+echo "  Step 6: Exporting to GGUF"
+echo "========================================================"
+
+# Personality model (main artifact)
+python -u -m scripts.export_gguf \
+    --checkpoint "$PERS_CKPT" \
+    --tokenizer "$TOKENIZER" \
+    --output "weights/${TAG}-f16.gguf" \
+    --dtype f16
+
+# Base model (for comparison / gamma injection)
+python -u -m scripts.export_gguf \
+    --checkpoint "$BASE_CKPT" \
+    --tokenizer "$TOKENIZER" \
+    --output "weights/${TAG}-base-f16.gguf" \
+    --dtype f16
+
+# =====================================================================
+# Done
+# =====================================================================
+echo ""
+echo "========================================================"
+echo "  DONE — $NAME ($PARAMS) with personality"
+echo "========================================================"
+echo ""
+echo "  Artifacts:"
+echo "    weights/${TAG}-f16.gguf          personality model"
+echo "    weights/${TAG}-base-f16.gguf     base model"
+echo "    weights/gamma_${TAG}.npz         personality vector (gamma)"
+echo ""
+echo "  Logs:"
+echo "    train_${TAG}_base.log"
+echo "    train_${TAG}_personality.log"
+echo ""
+echo "  Download:"
+echo "    scp ubuntu@\$(hostname -I | awk '{print \$1}'):~/nanollama/weights/${TAG}* ."
+echo ""
+echo "  Run:"
+echo "    ./nanollama --model ${TAG}-f16.gguf --interactive"
+echo "    ./nanollama --model ${TAG}-base-f16.gguf --gamma gamma_${TAG}.npz --interactive"

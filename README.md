@@ -92,6 +92,29 @@ Model definition: `nanollama/llama.py` (~300 lines).
 
 ---
 
+## Training Corpus
+
+**Base corpus: [FineWeb-Edu](https://huggingface.co/datasets/HuggingFaceFW/fineweb-edu)** — a 1.3T token subset of Common Crawl filtered for educational content. We use the `sample-10BT` split and stream N samples depending on model size (200K for nano, up to 10M for large).
+
+The tokenizer is [SentencePiece](https://github.com/google/sentencepiece) BPE trained on the first batch of downloaded data. Vocabulary size: 32,000 tokens + 13 special tokens (chat template markers, BOS, code delimiters).
+
+Data preparation downloads, tokenizes, and shards into memory-mapped binary files (`uint16` token IDs, 10M tokens per shard). No HuggingFace datasets library is needed at training time — only for the initial download.
+
+**Personality corpus** is a JSONL file with instruction/response pairs (or `messages` array, or plain text). During training, a configurable fraction of each batch (default 20%) is replaced with personality data. This is mixed at the dataloader level — same model, same optimizer, same schedule. No separate fine-tuning stage.
+
+**Recommended data volumes:**
+
+| Size | FineWeb samples | Approx tokens | Personality pairs |
+|------|----------------|---------------|-------------------|
+| nano | 200K | ~50M | 500–2K |
+| micro | 500K | ~125M | 1K–5K |
+| mini | 1M | ~250M | 2K–10K |
+| small | 3M | ~750M | 5K–20K |
+| medium | 10M | ~2.5B | 10K–50K |
+| large | 10M | ~2.5B | 20K–100K |
+
+---
+
 ## Personality Injection (θ = ε + γ)
 
 The soul formula, applied at training time.
