@@ -230,6 +230,8 @@ class Llama(nn.Module):
             nn.init.normal_(self.output.weight, mean=0.0, std=0.001)
         s = (3 ** 0.5) * (self.config.n_embd ** -0.5)
         for layer in self.layers:
+            layer.attn_norm.weight.fill_(1.0)
+            layer.ffn_norm.weight.fill_(1.0)
             nn.init.uniform_(layer.attn.c_q.weight, -s, s)
             nn.init.uniform_(layer.attn.c_k.weight, -s, s)
             nn.init.uniform_(layer.attn.c_v.weight, -s, s)
@@ -237,6 +239,7 @@ class Llama(nn.Module):
             nn.init.uniform_(layer.ffn.gate_proj.weight, -s, s)
             nn.init.uniform_(layer.ffn.up_proj.weight, -s, s)
             nn.init.zeros_(layer.ffn.down_proj.weight)
+        self.norm.weight.fill_(1.0)
 
         # ResFormer scalars
         self.resid_lambdas.fill_(1.0)
