@@ -34,7 +34,7 @@ class LlamaConfig:
 # head_dim=64, MHA for nano/micro, GQA for mini+.
 NAMED_CONFIGS = {
     #  name      depth  dim   heads  kv_heads  tied     ~params
-    "nano":   (  12,   384,    6,      6,     True),  #  33.5M
+    "nano":   (  12,   384,    6,      6,    False),  #  45.8M (untied: fixes 50x LR mismatch on output head)
     "micro":  (  16,   512,    8,      8,     True),  #  70.9M
     "mini":   (  20,   768,   12,      4,     True),  # 150.4M
     "small":  (  24,  1024,   16,      4,    False),  # 338M
