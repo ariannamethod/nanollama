@@ -228,7 +228,7 @@ H100 instances work correctly (as of Feb 2026). 1× H100: ~1M tok/s for nano, ~2
 
 Full pipeline verified: train → GGUF export (88MB F16) → llama.cpp inference (1700 tok/s on H100).
 
-### nano sample output (46M, 5000 steps)
+## nano sample output (46M, 5000 steps)
 
 ```
 >>> The history of science shows that
@@ -253,7 +253,41 @@ Education is the process of the individual being taught to the world through the
 interaction of the individual and the world.
 ```
 
-### micro sample output (87M, 5000 steps)
+### nano-yent sample output (46M + Yent personality, 5000 steps)
+
+```
+>>> The history of science shows that
+they are not part of a single theory, but rather combine the following
+elements to form a model of the world: The world is the same as it is in the
+known world. That cannot be argued without the existence of all universes.
+Rather, the world is the same as it was in the past. Science is the same as it
+was in the past. That is to say that science is the same as it was in the
+past. The earth itself is the same as it
+
+>>> Once upon a time in a small village
+they did not want to leave without food and rags. They were greeted by the
+wind, which bent over them, and soon shouted at each other as they started to
+hear the noise. But by the early 1800s the party had actually moved away from
+the cottage where the wind had come, and they were very receptive toward their
+party. The following year they would come in to hunt down the bandit, where
+they were going. But the band
+
+>>> Water is essential for life because
+they are responsible for nutrient cycling and are known for their efficient
+use. A substantial proportion of the water used to grow crops is used for the
+production of biofuels. Some scientists argue that the farming method is based
+on direct waste. Another famous theory is that the waste produced from the
+farms can be used to produce fertilisers, greenhouses, and fertilizers.
+
+>>> The most important thing about education is
+they are not the only ones who are the most avid users of the subject. But
+they have to be treated with utmost care. They are the only ones who have the
+effect of creating an indisputable truth." - John Truman More than 50 years
+later, the issue of education has become so important that it is still not so
+widespread.
+```
+
+## micro sample output (87M, 5000 steps)
 
 ```
 >>> The history of science shows that
@@ -290,39 +324,6 @@ families should give up their education to avoid the problems of poverty.
 Education is the greatest system of saving and protecting. That is why
 ```
 
-### nano-yent sample output (46M + Yent personality, 5000 steps)
-
-```
->>> The history of science shows that
-they are not part of a single theory, but rather combine the following
-elements to form a model of the world: The world is the same as it is in the
-known world. That cannot be argued without the existence of all universes.
-Rather, the world is the same as it was in the past. Science is the same as it
-was in the past. That is to say that science is the same as it was in the
-past. The earth itself is the same as it
-
->>> Once upon a time in a small village
-they did not want to leave without food and rags. They were greeted by the
-wind, which bent over them, and soon shouted at each other as they started to
-hear the noise. But by the early 1800s the party had actually moved away from
-the cottage where the wind had come, and they were very receptive toward their
-party. The following year they would come in to hunt down the bandit, where
-they were going. But the band
-
->>> Water is essential for life because
-they are responsible for nutrient cycling and are known for their efficient
-use. A substantial proportion of the water used to grow crops is used for the
-production of biofuels. Some scientists argue that the farming method is based
-on direct waste. Another famous theory is that the waste produced from the
-farms can be used to produce fertilisers, greenhouses, and fertilizers.
-
->>> The most important thing about education is
-they are not the only ones who are the most avid users of the subject. But
-they have to be treated with utmost care. They are the only ones who have the
-effect of creating an indisputable truth." - John Truman More than 50 years
-later, the issue of education has become so important that it is still not so
-widespread.
-```
 
 Training in progress — results updated as models complete.
 
