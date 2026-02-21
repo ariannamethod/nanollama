@@ -1,39 +1,15 @@
 #!/bin/bash
 # Lambda Cloud setup for nanollama
-# One-command setup for Lambda A100 instances
-#
-# IMPORTANT: Avoid H100 instances — known driver bug (Error 802) as of Feb 2026.
-# Use A100 80GB for stable training.
+# One-command setup for Lambda GPU instances (A100/H100)
 
 set -e
 
 echo "========================================"
 echo "  nanollama Lambda Cloud Setup"
 echo "========================================"
-echo ""
-echo "⚠️  IMPORTANT: Avoid H100 instances!"
-echo "    Known driver bug (Error 802) as of Feb 2026."
-echo "    Use A100 80GB instances instead."
-echo ""
-
 # Check GPU
 echo "Checking GPU..."
 nvidia-smi --query-gpu=name --format=csv,noheader
-
-# Check if H100 (warn user)
-if nvidia-smi --query-gpu=name --format=csv,noheader | grep -q "H100"; then
-    echo ""
-    echo "❌ H100 DETECTED - Known driver bug (Error 802)!"
-    echo "   Training may fail with cryptic CUDA errors."
-    echo "   STRONGLY recommend using A100 80GB instead."
-    echo ""
-    read -p "Continue anyway at your own risk? [y/N] " -n 1 -r
-    echo
-    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-        echo "Exiting. Please use A100 instances."
-        exit 1
-    fi
-fi
 
 # Install uv if not present (fast Python package manager)
 if ! command -v uv &> /dev/null; then

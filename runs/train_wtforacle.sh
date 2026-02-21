@@ -34,13 +34,8 @@ NUM_GPUS=$(nvidia-smi --list-gpus | wc -l)
 echo "GPUs detected: $NUM_GPUS"
 nvidia-smi --query-gpu=name --format=csv,noheader | head -1
 
-# Check for H100 (known broken)
-if nvidia-smi --query-gpu=name --format=csv,noheader | grep -q "H100"; then
-    echo ""
-    echo "WARNING: H100 detected — known driver bug (Error 802)."
-    echo "Training may fail. Use A100 instead."
-    echo ""
-fi
+# GPU info
+nvidia-smi --query-gpu=name --format=csv,noheader | head -1
 
 # Navigate to repo root
 if [ -f "pyproject.toml" ] && [ -d "nanollama" ]; then

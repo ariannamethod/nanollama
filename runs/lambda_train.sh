@@ -179,12 +179,8 @@ fi
 echo "========================================================"
 echo ""
 
-# H100 warning
-if echo "$GPU_NAME" | grep -qi "H100"; then
-    echo "WARNING: H100 detected — known driver bug (Error 802, Feb 2026)."
-    echo "A100 recommended. Ctrl+C to abort."
-    sleep 5
-fi
+# GPU info
+echo "GPU: $GPU_NAME"
 
 # ---- Navigate to repo ----
 if [ -f "pyproject.toml" ] && [ -d "nanollama" ]; then
