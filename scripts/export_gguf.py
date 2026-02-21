@@ -556,10 +556,16 @@ def main():
     dtype_map = {"f32": GGML_TYPE_F32, "f16": GGML_TYPE_F16, "q4_0": GGML_TYPE_Q4_0, "q8_0": GGML_TYPE_Q8_0}
     ggml_type = dtype_map[args.dtype]
 
+    # Skip ResFormer scalar weights (not needed for inference — baked into residual stream)
+    skip_names = {"resid_lambdas", "x0_lambdas"}
+
     print(f"\nConverting weights to {args.dtype}...")
     converted = 0
     total_raw = 0
     for name in sorted(state.keys()):
+        if name in skip_names:
+            print(f"  {name:45s} → SKIPPED (ResFormer scalar, not needed for GGUF inference)")
+            continue
         tensor = state[name]
         gguf_name = map_name(name)
         # Norm weights (1D) are always F32 (standard for llama.cpp)
