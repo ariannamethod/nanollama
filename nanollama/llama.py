@@ -35,8 +35,8 @@ class LlamaConfig:
 NAMED_CONFIGS = {
     #  name      depth  dim   heads  kv_heads  tied     ~params
     "nano":   (  12,   384,    6,      6,    False),  #  45.8M (untied: fixes 50x LR mismatch on output head)
-    "micro":  (  16,   512,    8,      8,     True),  #  70.9M
-    "mini":   (  20,   768,   12,      4,     True),  # 150.4M
+    "micro":  (  16,   512,    8,      8,    False),  #  87.3M (untied: avoids 50x LR mismatch + loss 23 start)
+    "mini":   (  20,   768,   12,      4,    False),  # 175.0M (untied: same reason)
     "small":  (  24,  1024,   16,      4,    False),  # 338M
     "goldie": (  22,  2048,   32,      8,    False),  # 1.1B
     "medium": (  32,  2048,   32,      8,    False),  # 1.6B
