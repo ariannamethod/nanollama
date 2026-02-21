@@ -53,7 +53,7 @@ def parse_args():
     parser.add_argument("--num-iterations", type=int, default=-1, help="Training iterations (-1 = auto from Chinchilla ratio)")
     parser.add_argument("--warmup-iters", type=int, default=100, help="Warmup iterations")
     parser.add_argument("--lr", type=float, default=None, help="Learning rate (auto if None)")
-    parser.add_argument("--weight-decay", type=float, default=0.1, help="Weight decay (Moonlight: critical for Muon scaling)")
+    parser.add_argument("--weight-decay", type=float, default=0.0, help="Weight decay for Muon matrix groups")
     
     # Logging & Checkpoints
     parser.add_argument("--run", type=str, default="nanollama", help="Run name for wandb")
@@ -164,7 +164,7 @@ def main():
     
     # Auto LR from model dimension
     if args.lr is None:
-        args.lr = 0.02 * (config.n_embd / 768) ** -0.5
+        args.lr = 0.02  # fixed base LR; per-group scaling handled in setup_optimizer
     print0(f"Learning rate: {args.lr}")
     
     # Wandb

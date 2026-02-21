@@ -25,8 +25,8 @@ class LlamaConfig:
     n_embd: int = 768
     norm_eps: float = 1e-5
     multiple_of: int = 256
-    window_pattern: str = "L"
-    rope_theta: float = 500000.0  # Llama 3 uses 500000, NOT 10000 (Llama 2)
+    window_pattern: str = "SSSL"
+    rope_theta: float = 10000.0   # 10000 for short context (2048); increase for longer
     tie_embeddings: bool = False   # share tok_embeddings and output weights
 
 # Explicit named configs — calculated for optimal depth/width ratio per model size.
@@ -211,7 +211,11 @@ class Llama(nn.Module):
             self.output = None  # will use tok_embeddings.weight in forward
         else:
             self.output = nn.Linear(config.n_embd, padded_vocab, bias=False)
-        
+
+        # ResFormer per-layer scalars (nanochat convention)
+        self.resid_lambdas = nn.Parameter(torch.ones(config.n_layer))
+        self.x0_lambdas = nn.Parameter(torch.zeros(config.n_layer))
+
         self.rotary_seq_len = config.sequence_len * 10
         head_dim = config.n_embd // config.n_head
         cos, sin = precompute_freqs_cis(head_dim, self.rotary_seq_len, theta=config.rope_theta)
@@ -221,7 +225,7 @@ class Llama(nn.Module):
     @torch.no_grad()
     def init_weights(self):
         """Initialize weights following Llama conventions."""
-        nn.init.normal_(self.tok_embeddings.weight, mean=0.0, std=self.config.n_embd ** -0.5)
+        nn.init.normal_(self.tok_embeddings.weight, mean=0.0, std=1.0)
         if self.output is not None:
             nn.init.normal_(self.output.weight, mean=0.0, std=0.001)
         s = (3 ** 0.5) * (self.config.n_embd ** -0.5)
@@ -233,7 +237,11 @@ class Llama(nn.Module):
             nn.init.uniform_(layer.ffn.gate_proj.weight, -s, s)
             nn.init.uniform_(layer.ffn.up_proj.weight, -s, s)
             nn.init.zeros_(layer.ffn.down_proj.weight)
-        
+
+        # ResFormer scalars
+        self.resid_lambdas.fill_(1.0)
+        self.x0_lambdas.fill_(0.1)
+
         head_dim = self.config.n_embd // self.config.n_head
         device = self.tok_embeddings.weight.device
         self.cos, self.sin = precompute_freqs_cis(head_dim, self.rotary_seq_len, 
@@ -259,6 +267,8 @@ class Llama(nn.Module):
             nparams = sum(p.numel() for p in self.parameters()) - self.tok_embeddings.weight.numel()
         else:
             nparams = sum(p.numel() for p in self.parameters())
+        # Exclude scalar params (not matmuls)
+        nparams -= self.resid_lambdas.numel() + self.x0_lambdas.numel()
         h, q, t = self.config.n_head, self.config.n_embd // self.config.n_head, self.config.sequence_len
         attn_flops = sum(12 * h * q * min(w[0], t) for w in self.window_sizes)
         return 6 * nparams + attn_flops
@@ -267,13 +277,16 @@ class Llama(nn.Module):
         tok = self.tok_embeddings.weight.numel()
         out = self.output.weight.numel() if self.output is not None else 0
         layers = sum(p.numel() for l in self.layers for p in l.parameters())
+        scalars = self.resid_lambdas.numel() + self.x0_lambdas.numel()
         return {'tok_embeddings': tok, 'output': out, 'transformer_layers': layers,
-                'total': tok + out + layers, 'tied': self.output is None}
+                'scalars': scalars, 'total': tok + out + layers + scalars,
+                'tied': self.output is None}
     
     def setup_optimizer(self, unembedding_lr=0.004, embedding_lr=0.2, matrix_lr=0.02,
-                        weight_decay=0.0, adam_betas=(0.8, 0.95)):
+                        weight_decay=0.0, adam_betas=(0.8, 0.95), scalar_lr=0.5):
         ddp, rank, local_rank, world_size = get_dist_info()
-        scale = (self.config.n_embd / 768) ** -0.5
+        # AdamW LR scales with 1/sqrt(dmodel), tuned at 768 (nanochat convention)
+        adamw_scale = (self.config.n_embd / 768) ** -0.5
 
         # Separate 1D (norms) from 2D (matrices) in transformer layers
         matrix_params = []
@@ -287,22 +300,26 @@ class Llama(nn.Module):
 
         param_groups = []
         if self.output is not None:
-            # Untied: separate groups for output and embedding
             param_groups.append(dict(kind='adamw', params=list(self.output.parameters()),
-                                     lr=unembedding_lr * scale, betas=adam_betas, eps=1e-10, weight_decay=0.0))
+                                     lr=unembedding_lr * adamw_scale, betas=adam_betas, eps=1e-10, weight_decay=0.0))
             param_groups.append(dict(kind='adamw', params=list(self.tok_embeddings.parameters()),
-                                     lr=embedding_lr * scale, betas=adam_betas, eps=1e-10, weight_decay=0.0))
+                                     lr=embedding_lr * adamw_scale, betas=adam_betas, eps=1e-10, weight_decay=0.0))
         else:
-            # Tied: embedding does double duty (input + output)
             param_groups.append(dict(kind='adamw', params=list(self.tok_embeddings.parameters()),
-                                     lr=embedding_lr * scale, betas=adam_betas, eps=1e-10, weight_decay=0.0))
-        param_groups.append(dict(kind='adamw', params=norm_params, lr=unembedding_lr * scale,
+                                     lr=embedding_lr * adamw_scale, betas=adam_betas, eps=1e-10, weight_decay=0.0))
+        param_groups.append(dict(kind='adamw', params=norm_params, lr=unembedding_lr * adamw_scale,
                                  betas=adam_betas, eps=1e-10, weight_decay=0.0))
+        # ResFormer scalars
+        param_groups.append(dict(kind='adamw', params=[self.resid_lambdas],
+                                 lr=scalar_lr * 0.01, betas=adam_betas, eps=1e-10, weight_decay=0.0))
+        param_groups.append(dict(kind='adamw', params=[self.x0_lambdas],
+                                 lr=scalar_lr, betas=(0.96, 0.95), eps=1e-10, weight_decay=0.0))
+        # Muon groups: matrix_lr NOT scaled by dmodel (nanochat convention)
         for shape in sorted({p.shape for p in matrix_params}):
             group = [p for p in matrix_params if p.shape == shape]
-            param_groups.append(dict(kind='muon', params=group, lr=matrix_lr * scale,
+            param_groups.append(dict(kind='muon', params=group, lr=matrix_lr,
                                      momentum=0.95, ns_steps=5, beta2=0.95, weight_decay=weight_decay))
-        
+
         optimizer = (DistMuonAdamW if ddp else MuonAdamW)(param_groups)
         for g in optimizer.param_groups:
             g["initial_lr"] = g["lr"]
@@ -313,24 +330,28 @@ class Llama(nn.Module):
         B, T = idx.size()
         T0 = 0 if kv_cache is None else kv_cache.get_pos()
         cos_sin = self.cos[:, T0:T0+T], self.sin[:, T0:T0+T]
-        
+
         x = self.tok_embeddings(idx)
+        x = rms_norm(x)  # normalize after embedding (nanochat convention)
+        x0 = x  # save for ResFormer x0 residual
         for i, layer in enumerate(self.layers):
+            x = self.resid_lambdas[i] * x + self.x0_lambdas[i] * x0
             x = layer(x, cos_sin, self.window_sizes[i], kv_cache)
         x = self.norm(x)
-        
+
         if self.output is not None:
             logits = self.output(x)[..., :self.config.vocab_size].float()
         else:
             logits = F.linear(x, self.tok_embeddings.weight)[..., :self.config.vocab_size].float()
-        
+
+        # Logit softcap (nanochat convention, replaces z-loss)
+        softcap = 15.0
+        logits = softcap * torch.tanh(logits / softcap)
+
         if targets is not None:
-            ce_loss = F.cross_entropy(logits.reshape(-1, logits.size(-1)), targets.reshape(-1),
-                                      ignore_index=-1, reduction=loss_reduction)
-            # Z-loss: penalize large logits, eliminates sporadic loss spikes
-            log_z = torch.logsumexp(logits, dim=-1)
-            z_loss = 1e-4 * (log_z ** 2).mean()
-            return ce_loss + z_loss
+            loss = F.cross_entropy(logits.reshape(-1, logits.size(-1)), targets.reshape(-1),
+                                   ignore_index=-1, reduction=loss_reduction)
+            return loss
         return logits
     
     @torch.inference_mode()

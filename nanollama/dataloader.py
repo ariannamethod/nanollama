@@ -74,8 +74,8 @@ class DistributedDataLoader:
         self.current_position = 0
         self.rng = np.random.default_rng(seed + rank)
         
-        # Load first shard
-        self._load_shard(0)
+        # Load first shard (offset by rank for distributed)
+        self._load_shard(self.rank % self.num_shards)
     
     def _find_shards(self, directory: str) -> List[str]:
         """Find all .bin shard files in a directory."""
@@ -95,81 +95,48 @@ class DistributedDataLoader:
         self.current_shard_idx = shard_idx
         self.current_position = 0
     
-    def _get_batch_from_data(
-        self,
-        data: np.ndarray,
-        num_sequences: int,
-    ) -> Tuple[np.ndarray, np.ndarray]:
-        """Extract a batch of sequences from data array."""
-        seq_len = self.sequence_length
-        batch_x = np.zeros((num_sequences, seq_len), dtype=np.int64)
-        batch_y = np.zeros((num_sequences, seq_len), dtype=np.int64)
-        
-        for i in range(num_sequences):
-            # Random position in data
-            max_start = len(data) - seq_len - 1
-            if max_start <= 0:
-                start = 0
-            else:
-                start = self.rng.integers(0, max_start)
-            
-            batch_x[i] = data[start:start + seq_len]
-            batch_y[i] = data[start + 1:start + seq_len + 1]
-        
-        return batch_x, batch_y
-    
     def next_batch(self) -> Tuple[torch.Tensor, torch.Tensor]:
         """
-        Get the next training batch.
-        
-        Returns:
-            (input_ids, target_ids): Tensors of shape (batch_size, seq_len)
+        Get the next training batch. Base data is read SEQUENTIALLY
+        (each token seen once per epoch). Personality data uses random sampling.
         """
-        batch_x_list = []
-        batch_y_list = []
-        
-        # Determine split between base data and personality data
+        seq_len = self.sequence_length
+
+        # Determine split
         if self.personality_ratio > 0 and len(self.personality_shards) > 0:
             num_personality = int(self.batch_size * self.personality_ratio)
             num_base = self.batch_size - num_personality
         else:
             num_personality = 0
             num_base = self.batch_size
-        
-        # Get base data sequences
-        if num_base > 0:
-            x, y = self._get_batch_from_data(self.current_data, num_base)
-            batch_x_list.append(x)
-            batch_y_list.append(y)
-        
-        # Get personality data sequences
+
+        batch_x = np.zeros((self.batch_size, seq_len), dtype=np.int64)
+        batch_y = np.zeros((self.batch_size, seq_len), dtype=np.int64)
+
+        # Base data: sequential streaming (every token seen once)
+        for i in range(num_base):
+            if self.current_position + seq_len + 1 > len(self.current_data):
+                next_shard = (self.current_shard_idx + 1) % self.num_shards
+                self._load_shard(next_shard)
+            batch_x[i] = self.current_data[self.current_position:self.current_position + seq_len]
+            batch_y[i] = self.current_data[self.current_position + 1:self.current_position + seq_len + 1]
+            self.current_position += seq_len
+
+        # Personality data: random sampling (intentional for mixing)
         if num_personality > 0:
-            # Load random personality shard
             shard_idx = self.rng.integers(0, len(self.personality_shards))
-            personality_data = np.memmap(
-                self.personality_shards[shard_idx],
-                dtype=np.uint16,
-                mode='r'
-            )
-            x, y = self._get_batch_from_data(personality_data, num_personality)
-            batch_x_list.append(x)
-            batch_y_list.append(y)
-        
-        # Concatenate and shuffle
-        batch_x = np.concatenate(batch_x_list, axis=0)
-        batch_y = np.concatenate(batch_y_list, axis=0)
-        
-        # Shuffle the batch
-        perm = self.rng.permutation(len(batch_x))
-        batch_x = batch_x[perm]
-        batch_y = batch_y[perm]
-        
-        # Advance to next shard periodically
-        self.current_position += self.batch_size * self.sequence_length
-        if self.current_position >= len(self.current_data) - self.sequence_length:
-            next_shard = (self.current_shard_idx + self.world_size) % self.num_shards
-            self._load_shard(next_shard)
-        
+            pdata = np.memmap(self.personality_shards[shard_idx], dtype=np.uint16, mode='r')
+            for i in range(num_personality):
+                j = num_base + i
+                max_start = max(1, len(pdata) - seq_len - 1)
+                start = self.rng.integers(0, max_start)
+                batch_x[j] = pdata[start:start + seq_len]
+                batch_y[j] = pdata[start + 1:start + seq_len + 1]
+            # Shuffle when mixing personality with base
+            perm = self.rng.permutation(self.batch_size)
+            batch_x = batch_x[perm]
+            batch_y = batch_y[perm]
+
         return (
             torch.from_numpy(batch_x),
             torch.from_numpy(batch_y),
