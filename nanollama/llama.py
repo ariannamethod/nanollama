@@ -28,6 +28,10 @@ class LlamaConfig:
     window_pattern: str = "SSSL"
     rope_theta: float = 10000.0   # 10000 for short context (2048); increase for longer
     tie_embeddings: bool = False   # share tok_embeddings and output weights
+    # llama.cpp compatibility: standard Llama 3 by default
+    use_post_emb_norm: bool = False  # parameterless RMSNorm after embedding (nanochat extension)
+    use_resformer: bool = False      # per-layer residual scaling with x0 skip (nanochat extension)
+    softcap: float = 0.0            # logit softcap; 0 = disabled (standard). 15 = nanochat convention
 
 # Explicit named configs — calculated for optimal depth/width ratio per model size.
 # Design: deep-and-thin (MobileLLM insight), tied embeddings for small models,
@@ -212,9 +216,13 @@ class Llama(nn.Module):
         else:
             self.output = nn.Linear(config.n_embd, padded_vocab, bias=False)
 
-        # ResFormer per-layer scalars (nanochat convention)
-        self.resid_lambdas = nn.Parameter(torch.ones(config.n_layer))
-        self.x0_lambdas = nn.Parameter(torch.zeros(config.n_layer))
+        # ResFormer per-layer scalars (nanochat extension, off by default for llama.cpp compat)
+        if config.use_resformer:
+            self.resid_lambdas = nn.Parameter(torch.ones(config.n_layer))
+            self.x0_lambdas = nn.Parameter(torch.zeros(config.n_layer))
+        else:
+            self.resid_lambdas = None
+            self.x0_lambdas = None
 
         self.rotary_seq_len = config.sequence_len * 10
         head_dim = config.n_embd // config.n_head
@@ -241,9 +249,10 @@ class Llama(nn.Module):
             nn.init.zeros_(layer.ffn.down_proj.weight)
         self.norm.weight.fill_(1.0)
 
-        # ResFormer scalars
-        self.resid_lambdas.fill_(1.0)
-        self.x0_lambdas.fill_(0.1)
+        # ResFormer scalars (only if enabled)
+        if self.resid_lambdas is not None:
+            self.resid_lambdas.fill_(1.0)
+            self.x0_lambdas.fill_(0.1)
 
         head_dim = self.config.n_embd // self.config.n_head
         device = self.tok_embeddings.weight.device
@@ -271,7 +280,8 @@ class Llama(nn.Module):
         else:
             nparams = sum(p.numel() for p in self.parameters())
         # Exclude scalar params (not matmuls)
-        nparams -= self.resid_lambdas.numel() + self.x0_lambdas.numel()
+        if self.resid_lambdas is not None:
+            nparams -= self.resid_lambdas.numel() + self.x0_lambdas.numel()
         h, q, t = self.config.n_head, self.config.n_embd // self.config.n_head, self.config.sequence_len
         attn_flops = sum(12 * h * q * min(w[0], t) for w in self.window_sizes)
         return 6 * nparams + attn_flops
@@ -280,7 +290,7 @@ class Llama(nn.Module):
         tok = self.tok_embeddings.weight.numel()
         out = self.output.weight.numel() if self.output is not None else 0
         layers = sum(p.numel() for l in self.layers for p in l.parameters())
-        scalars = self.resid_lambdas.numel() + self.x0_lambdas.numel()
+        scalars = (self.resid_lambdas.numel() + self.x0_lambdas.numel()) if self.resid_lambdas is not None else 0
         return {'tok_embeddings': tok, 'output': out, 'transformer_layers': layers,
                 'scalars': scalars, 'total': tok + out + layers + scalars,
                 'tied': self.output is None}
@@ -312,11 +322,12 @@ class Llama(nn.Module):
                                      lr=embedding_lr * adamw_scale, betas=adam_betas, eps=1e-10, weight_decay=0.0))
         param_groups.append(dict(kind='adamw', params=norm_params, lr=unembedding_lr * adamw_scale,
                                  betas=adam_betas, eps=1e-10, weight_decay=0.0))
-        # ResFormer scalars
-        param_groups.append(dict(kind='adamw', params=[self.resid_lambdas],
-                                 lr=scalar_lr * 0.01, betas=adam_betas, eps=1e-10, weight_decay=0.0))
-        param_groups.append(dict(kind='adamw', params=[self.x0_lambdas],
-                                 lr=scalar_lr, betas=(0.96, 0.95), eps=1e-10, weight_decay=0.0))
+        # ResFormer scalars (only if enabled)
+        if self.resid_lambdas is not None:
+            param_groups.append(dict(kind='adamw', params=[self.resid_lambdas],
+                                     lr=scalar_lr * 0.01, betas=adam_betas, eps=1e-10, weight_decay=0.0))
+            param_groups.append(dict(kind='adamw', params=[self.x0_lambdas],
+                                     lr=scalar_lr, betas=(0.96, 0.95), eps=1e-10, weight_decay=0.0))
         # Muon groups: matrix_lr NOT scaled by dmodel (nanochat convention)
         for shape in sorted({p.shape for p in matrix_params}):
             group = [p for p in matrix_params if p.shape == shape]
@@ -335,11 +346,16 @@ class Llama(nn.Module):
         cos_sin = self.cos[:, T0:T0+T], self.sin[:, T0:T0+T]
 
         x = self.tok_embeddings(idx)
-        x = rms_norm(x)  # normalize after embedding (nanochat convention)
-        x0 = x  # save for ResFormer x0 residual
-        for i, layer in enumerate(self.layers):
-            x = self.resid_lambdas[i] * x + self.x0_lambdas[i] * x0
-            x = layer(x, cos_sin, self.window_sizes[i], kv_cache)
+        if self.config.use_post_emb_norm:
+            x = rms_norm(x)  # nanochat extension: normalize after embedding
+        if self.resid_lambdas is not None:
+            x0 = x  # save for ResFormer x0 residual
+            for i, layer in enumerate(self.layers):
+                x = self.resid_lambdas[i] * x + self.x0_lambdas[i] * x0
+                x = layer(x, cos_sin, self.window_sizes[i], kv_cache)
+        else:
+            for i, layer in enumerate(self.layers):
+                x = layer(x, cos_sin, self.window_sizes[i], kv_cache)
         x = self.norm(x)
 
         if self.output is not None:
@@ -347,9 +363,9 @@ class Llama(nn.Module):
         else:
             logits = F.linear(x, self.tok_embeddings.weight)[..., :self.config.vocab_size].float()
 
-        # Logit softcap (nanochat convention, replaces z-loss)
-        softcap = 15.0
-        logits = softcap * torch.tanh(logits / softcap)
+        # Logit softcap (nanochat extension, disabled by default for llama.cpp compat)
+        if self.config.softcap > 0:
+            logits = self.config.softcap * torch.tanh(logits / self.config.softcap)
 
         if targets is not None:
             loss = F.cross_entropy(logits.reshape(-1, logits.size(-1)), targets.reshape(-1),
