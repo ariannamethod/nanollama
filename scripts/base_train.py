@@ -41,6 +41,7 @@ def parse_args():
     parser.add_argument("--vocab-size", type=int, default=32000, help="Vocabulary size")
     parser.add_argument("--max-seq-len", type=int, default=2048, help="Maximum sequence length")
     # nanochat extensions (off by default = standard Llama 3, full llama.cpp compatibility)
+    parser.add_argument("--use-qk-norm", action="store_true", help="RMSNorm on Q/K after RoPE (Llama 3.1)")
     parser.add_argument("--use-post-emb-norm", action="store_true", help="RMSNorm after embedding (nanochat)")
     parser.add_argument("--use-resformer", action="store_true", help="ResFormer per-layer scaling (nanochat)")
     parser.add_argument("--softcap", type=float, default=0.0, help="Logit softcap (0=off, 15=nanochat)")
@@ -104,6 +105,7 @@ def main():
         config = get_config_for_depth(args.depth)
     config.vocab_size = args.vocab_size
     config.sequence_len = args.max_seq_len
+    config.use_qk_norm = args.use_qk_norm
     config.use_post_emb_norm = args.use_post_emb_norm
     config.use_resformer = args.use_resformer
     config.softcap = args.softcap
@@ -112,6 +114,7 @@ def main():
     print0(f"nanollama training - {args.model_size or f'depth={args.depth}'}")
     tied_str = ", tied" if config.tie_embeddings else ""
     ext = []
+    if config.use_qk_norm: ext.append("qk-norm")
     if config.use_post_emb_norm: ext.append("post-emb-norm")
     if config.use_resformer: ext.append("resformer")
     if config.softcap > 0: ext.append(f"softcap={config.softcap}")

@@ -511,7 +511,7 @@ def main():
     writer.add_uint32("llama.vocab_size", vocab_size)
 
     # nanollama-specific flags for Yent engine
-    writer.add_bool("nanollama.qk_norm", True)
+    writer.add_bool("nanollama.qk_norm", config.get("use_qk_norm", False))
     writer.add_bool("nanollama.rope_conjugate", True)
 
     # Detect tied embeddings from config or by comparing weight tensors

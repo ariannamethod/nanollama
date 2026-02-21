@@ -29,6 +29,7 @@ class LlamaConfig:
     rope_theta: float = 10000.0   # 10000 for short context (2048); increase for longer
     tie_embeddings: bool = False   # share tok_embeddings and output weights
     # llama.cpp compatibility: standard Llama 3 by default
+    use_qk_norm: bool = False       # parameterless RMSNorm on Q and K after RoPE (Llama 3.1-style)
     use_post_emb_norm: bool = False  # parameterless RMSNorm after embedding (nanochat extension)
     use_resformer: bool = False      # per-layer residual scaling with x0 skip (nanochat extension)
     softcap: float = 0.0            # logit softcap; 0 = disabled (standard). 15 = nanochat convention
@@ -114,8 +115,9 @@ class CausalSelfAttention(nn.Module):
         self.n_head, self.n_kv_head = config.n_head, config.n_kv_head
         self.n_embd, self.head_dim = config.n_embd, config.n_embd // config.n_head
         self.norm_eps = config.norm_eps
+        self.use_qk_norm = config.use_qk_norm
         self.n_rep = self.n_head // self.n_kv_head
-        
+
         self.c_q = nn.Linear(self.n_embd, self.n_head * self.head_dim, bias=False)
         self.c_k = nn.Linear(self.n_embd, self.n_kv_head * self.head_dim, bias=False)
         self.c_v = nn.Linear(self.n_embd, self.n_kv_head * self.head_dim, bias=False)
@@ -127,10 +129,11 @@ class CausalSelfAttention(nn.Module):
         q = self.c_q(x).view(B, T, self.n_head, self.head_dim)
         k = self.c_k(x).view(B, T, self.n_kv_head, self.head_dim)
         v = self.c_v(x).view(B, T, self.n_kv_head, self.head_dim)
-        
+
         cos, sin = cos_sin
         q, k = apply_rotary_emb(q, cos, sin), apply_rotary_emb(k, cos, sin)
-        q, k = rms_norm(q, self.norm_eps), rms_norm(k, self.norm_eps)
+        if self.use_qk_norm:
+            q, k = rms_norm(q, self.norm_eps), rms_norm(k, self.norm_eps)
 
         if kv_cache is not None:
             y = self._attn_with_cache(q, k, v, kv_cache)
