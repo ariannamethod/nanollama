@@ -221,10 +221,36 @@ H100 instances work correctly (as of Feb 2026). 1× H100: ~1M tok/s for nano, ~2
 
 ## Verified Results
 
-| Model | Params | Tokens | Loss | Speed | Hardware |
-|-------|--------|--------|------|-------|----------|
-| nano | 46M | 1B+ | 3.18 @ 2000 steps | 1M tok/s, 28% MFU | 1× H100 |
-| nano GGUF | 46M | — | llama.cpp loads ✓ | 21 tok/s | H100 |
+| Model | Params | Tokens | Steps | Loss | Speed | Hardware |
+|-------|--------|--------|-------|------|-------|----------|
+| nano | 46M | 2.6B (1B unique) | 5000 | 3.07 | 1.037M tok/s, 28.5% MFU | 1× H100 |
+
+Full pipeline verified: train → GGUF export (88MB F16) → llama.cpp inference (1700 tok/s on H100).
+
+### nano sample output (46M, 5000 steps)
+
+```
+>>> The history of science shows that
+the science of the human being, which, according to the ancient Greek, is the
+science of the living. In the ancient Greeks the science of the living was the
+science of the human being, which is the science of the living.
+
+>>> Once upon a time in a small village
+the first time the natives were to be brought to the place. The first visit to
+the village was made by the Jorqui, the first of whom was the man who was to be
+born in the village.
+
+>>> Water is essential for life because
+it enables us to survive and thrive in the midst of climate change. In the wake
+of the 2008 tsunami, the world's oceans have been declared "hotspots," and sea
+levels have been observed as far back as the 1970s.
+
+>>> The most important thing about education is
+that it is a very personal experience. The whole concept of education is to be
+rooted in the inner connection of the individual to the world and to the world.
+Education is the process of the individual being taught to the world through the
+interaction of the individual and the world.
+```
 
 Training in progress — results updated as models complete.
 
