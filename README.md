@@ -2,8 +2,6 @@
 
 > Train Llama 3 models from scratch. Any scale, any personality. No PyTorch at inference. No wrapping existing weights.
 
-**Status: beta — actively tested on Lambda Cloud (A100). Do not use H100 instances (driver bug Error 802 as of Feb 2026).**
-
 ---
 
 ## What This Is
