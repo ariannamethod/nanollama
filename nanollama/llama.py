@@ -89,9 +89,9 @@ class RMSNorm(nn.Module):
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return x * torch.rsqrt(x.pow(2).mean(-1, keepdim=True) + self.eps) * self.weight
 
-def precompute_freqs_cis(dim: int, seq_len: int, theta: float = 500000.0,
+def precompute_freqs_cis(dim: int, seq_len: int, theta: float = 10000.0,
                           device: Optional[torch.device] = None) -> Tuple[torch.Tensor, torch.Tensor]:
-    """Precompute RoPE cos/sin. Llama 3 uses theta=500000 (NOT 10000 like Llama 2)."""
+    """Precompute RoPE cos/sin. Default theta=10000 (standard); increase for longer context."""
     inv_freq = 1.0 / (theta ** (torch.arange(0, dim, 2, dtype=torch.float32, device=device) / dim))
     t = torch.arange(seq_len, dtype=torch.float32, device=device)
     freqs = torch.outer(t, inv_freq)
@@ -100,10 +100,10 @@ def precompute_freqs_cis(dim: int, seq_len: int, theta: float = 500000.0,
     return cos, sin
 
 def apply_rotary_emb(x: torch.Tensor, cos: torch.Tensor, sin: torch.Tensor) -> torch.Tensor:
-    """Apply RoPE to x (B, T, H, D)."""
+    """Apply RoPE to x (B, T, H, D). Standard rotation (llama.cpp compatible)."""
     d = x.shape[3] // 2
     x1, x2 = x[..., :d], x[..., d:]
-    return torch.cat([x1 * cos + x2 * sin, x1 * (-sin) + x2 * cos], dim=3)
+    return torch.cat([x1 * cos - x2 * sin, x1 * sin + x2 * cos], dim=3)
 
 
 class CausalSelfAttention(nn.Module):

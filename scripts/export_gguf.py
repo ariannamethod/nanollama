@@ -512,7 +512,7 @@ def main():
 
     # nanollama-specific flags for Yent engine
     writer.add_bool("nanollama.qk_norm", config.get("use_qk_norm", False))
-    writer.add_bool("nanollama.rope_conjugate", True)
+    writer.add_bool("nanollama.rope_conjugate", False)  # standard rotation (llama.cpp compatible)
 
     # Detect tied embeddings from config or by comparing weight tensors
     tied = config.get("tie_embeddings", False)
