@@ -228,7 +228,7 @@ H100 instances work correctly (as of Feb 2026). 1× H100: ~1M tok/s for nano, ~2
 
 Full pipeline verified: train → GGUF export (88MB F16) → llama.cpp inference (1700 tok/s on H100).
 
-## nano sample output (46M, 5000 steps)
+## nano sample output (46M, 5000 steps)  
 
 ```
 >>> The history of science shows that
@@ -287,7 +287,7 @@ later, the issue of education has become so important that it is still not so
 widespread.
 ```
 
-## micro sample output (87M, 5000 steps)
+## micro sample output (87M, 5000 steps)  
 
 ```
 >>> The history of science shows that
