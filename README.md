@@ -325,6 +325,40 @@ Education is the greatest system of saving and protecting. That is why
 ```
 
 
+### micro-wtforacle sample output (87M + WTForacle personality, 5000 steps)
+
+```
+>>> The history of science shows that
+they are not the same. "Theory of Science" is one of the first times in
+history that science has spawned a new trend and has become such a new topic
+that it cannot be ignored in the current debate. Science has even made the
+idea that the world is divided into different schools and different cultures.
+The view that it is not that of science that has not been adopted as the
+truth, but of science that has only existed and then evolved in the world.
+
+>>> Once upon a time in a small village
+they did not want to leave the village and were forced to move into a new
+plot. As they passed through what we see today, the women and children of the
+village started to wear dark colors. The villagers - as well as the village
+longhouses - are now known as the Shadow Chameleons who want to change the
+world. As Halsey said, the new becomes more difficult to change.
+
+>>> Water is essential for life because
+they are responsible for water. - Sulfur protects our bodies from the
+elements, such as sunlight, and is particularly useful for agriculture because
+it can destroy precious metals, like iron. - The most important source of
+sulfur is in the leaves of the mushroom. When exposed to sunlight, the sulfur
+will pour out into the air. - Mangoes or other tropical plants like to bloom
+from early spring to early autumn and are good for the environment.
+
+>>> The most important thing about education is
+they are responsible for the entire classroom. That is because our students
+are educated by a school that has a teacher who is qualified by a school that
+has a school that has a teacher who has a school that has a teacher who has a
+school that has a teacher that has a teacher who has a teacher who has a
+teacher who has a teacher who is a teacher that has a teacher.
+```
+
 Training in progress — results updated as models complete.
 
 ---
