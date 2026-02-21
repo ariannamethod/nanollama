@@ -224,6 +224,7 @@ H100 instances work correctly (as of Feb 2026). 1× H100: ~1M tok/s for nano, ~2
 | Model | Params | Tokens | Steps | Loss | Speed | Hardware |
 |-------|--------|--------|-------|------|-------|----------|
 | nano | 46M | 2.6B (1B unique) | 5000 | 3.07 | 1.037M tok/s, 28.5% MFU | 1× H100 |
+| micro | 87M | 2.6B | 5000 | 2.96 | 598K tok/s, 33.3% MFU | 1× H100 |
 
 Full pipeline verified: train → GGUF export (88MB F16) → llama.cpp inference (1700 tok/s on H100).
 
@@ -250,6 +251,43 @@ that it is a very personal experience. The whole concept of education is to be
 rooted in the inner connection of the individual to the world and to the world.
 Education is the process of the individual being taught to the world through the
 interaction of the individual and the world.
+```
+
+### micro sample output (87M, 5000 steps)
+
+```
+>>> The history of science shows that
+they did not succeed in having the same scientists as the first. And they
+failed in that the first two scientists emerged from the pre-context and
+became scientists as scientists after the first two. So many scientists - as
+many as 10,000 - went to science. But we know that whoever went to science is
+a scientist or an inventor. The new technology that would change the world and
+enable us to live more economically is the ever-incre
+
+>>> Once upon a time in a small village
+they did not want to leave their village and were given a small group of
+people, they called out to them what they had done for them. Then they began
+to talk to each other. They said to each other: What had you done? They did
+not want to tell them that they were excused. They knew they were not excused
+or they were not saying to themselves: What would you do to make up your mind?
+The children talked to each other. They
+
+>>> Water is essential for life because
+they are responsible for necessary raw materials and the creation of our food.
+A substantial portion of the carbon dioxide produced is deposited in the
+atmosphere, and the overall amount of carbon stored in the soil cannot be
+changed without direct human intervention. When people burn fossil fuels, they
+release carbon dioxide into the atmosphere that has the potential to knock out
+the oxygen in the atmosphere.
+
+>>> The most important thing about education is
+they are not just necessary to survive. That is because they are the
+inevitable cause of economic necessity. That is what we see in the
+industrialized countries. Let us talk about education in perspective. The
+importance of education in the world. There is a great tension in the world.
+Education has to be taken seriously. It is not enough that people or their
+families should give up their education to avoid the problems of poverty.
+Education is the greatest system of saving and protecting. That is why
 ```
 
 Training in progress — results updated as models complete.

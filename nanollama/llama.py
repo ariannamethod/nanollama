@@ -162,7 +162,10 @@ class CausalSelfAttention(nn.Module):
             k_full = k_full.repeat_interleave(self.n_rep, dim=2)
             v_full = v_full.repeat_interleave(self.n_rep, dim=2)
         q, k_full, v_full = q.transpose(1, 2), k_full.transpose(1, 2), v_full.transpose(1, 2)
-        y = F.scaled_dot_product_attention(q, k_full, v_full, dropout_p=0.0, is_causal=True)
+        # is_causal=True is WRONG for decode (q_len=1): it masks all but first key!
+        # Only use causal mask during prefill (q_len > 1)
+        use_causal = (q.shape[2] > 1)
+        y = F.scaled_dot_product_attention(q, k_full, v_full, dropout_p=0.0, is_causal=use_causal)
         return y.transpose(1, 2)
 
 
