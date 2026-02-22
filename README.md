@@ -77,7 +77,7 @@ torchrun --nproc_per_node=8 -m scripts.base_train --model-size small
 # Export to GGUF (llama.cpp compatible)
 python -m scripts.export_gguf \
   --checkpoint checkpoints/nano/checkpoint.pt \
-  --tokenizer path/to/tokenizer.model \
+  --tokenizer weights/tokenizer.model \
   --output model.gguf --dtype f16
 
 # Test in llama.cpp
@@ -143,7 +143,7 @@ Three tiers:
 
 Russian gets more data than French/German because Cyrillic has zero cross-lingual transfer from Latin-script languages — FR/DE/EN all boost each other through shared script.
 
-Data is tokenized into memory-mapped binary shards (`uint16`, ~20MB per shard). HuggingFace `datasets` needed only for download, not training.
+Data is tokenized into memory-mapped binary shards (`uint16`, ~20MB per shard). This limits vocab to ≤ 65535 tokens — sufficient for Tiers 0–2. Tier 3 (96K vocab) will require `uint32` shards (not yet implemented). HuggingFace `datasets` needed only for download, not training.
 
 ```bash
 # Prepare FineWeb-Edu (specify samples, auto-calculates tokens)
@@ -161,7 +161,7 @@ python -m data.prepare_multi_corpus --preset goldie --total-tokens 22B
 
 ## Personality Injection (θ = ε + γ + αδ)
 
-This is not fine-tuning. Fine-tuning modifies the entire model and is tied to a specific base checkpoint — you can't transfer it. Gamma is different: train two models from scratch on the same data (one with personality mixed in, one without), subtract weights, and you get a portable personality vector.
+This is not fine-tuning. Fine-tuning is typically tied to a specific base checkpoint — portability across bases and scales is non-trivial. Gamma is different: train two models from scratch on the same data (one with personality mixed in, one without), subtract weights, and you get a portable personality vector.
 
 ```
 γ = θ − ε          # extract: personality model minus base model
@@ -171,7 +171,7 @@ This is not fine-tuning. Fine-tuning modifies the entire model and is tied to a 
 The key insight: gamma is orthogonal to language knowledge (γ ⊥ δ, cosine similarity ≈ 0, confirmed experimentally). Personality and factual knowledge live in different subspaces. This means you can:
 
 - Extract personality once, inject into any base model of the same architecture
-- Combine multiple gammas (untested but mathematically sound)
+- Combine multiple gammas (untested, but linear composition is the natural first baseline)
 - Ship a 17MB personality file instead of a full model
 
 ```bash
@@ -198,11 +198,11 @@ Produces **llama.cpp-compatible** GGUF v3 files. Norms stored as F32, matrices i
 ```bash
 python -m scripts.export_gguf \
   --checkpoint checkpoints/nano/checkpoint.pt \
-  --tokenizer path/to/tokenizer.model \
+  --tokenizer weights/tokenizer.model \
   --output model.gguf --dtype f16
 ```
 
-Supported dtypes: F32, F16, Q8_0.
+Exporter writes F32, F16, Q8_0. Go engine reads these plus Q4_0, Q5_0, Q4_K, Q6_K from externally quantized files (e.g. via `llama-quantize`).
 
 ---
 
@@ -231,7 +231,7 @@ Not a toy — this is a full Llama-family forward pass implementation:
 - **Built-in web chat UI** with streaming (--serve)
 - **Attention bias support** for Qwen-family models
 
-Loads any standard GGUF file — tested with Qwen, SmolLM2, and nanollama models up to 3B parameters.
+Loads many standard GGUF files — tested with Qwen, SmolLM2, and nanollama models up to 3B parameters.
 
 ---
 
@@ -258,10 +258,10 @@ H100 instances work correctly (as of Feb 2026). 1× H100: ~1M tok/s for nano, ~2
 | nano | 46M | 2.6B (1B unique) | 5000 | 3.07 | 1.037M tok/s, 28.5% MFU | 1× H100 |
 | micro | 87M | 2.6B | 5000 | 2.96 | 598K tok/s, 33.3% MFU | 1× H100 |
 | mini | 175M | 2.6B | 5000 | 2.43 | 289K tok/s, 33.3% MFU | 4× H100 |
-| small* | 336M | 2.6B | 5000 | 3.07 | 162K tok/s, 36.1% MFU | 4× H100 |
+| small* | 336M | 2.6B | 5000 | 3.07† | 162K tok/s, 36.1% MFU | 4× H100 |
 | **goldie** | **1.1B** | **22B** | **22671** | **in progress** | — | **4× H100** |
 
-\* small trained on partial EN corpus (FineWeb-Edu + DCLM only, without code and math). Loss is higher than expected for 336M — will be retrained on full multi-corpus after goldie completes.
+\* small trained on partial EN corpus (FineWeb-Edu + DCLM only, without code and math). † Training loss at final step — same value as nano is not a typo; the partial corpus and insufficient token count (2.6B vs 6.7B Chinchilla 20x) explain the underperformance. Will be retrained on full multi-corpus.
 
 Full pipeline verified: train → GGUF export → Go inference or llama.cpp.
 
