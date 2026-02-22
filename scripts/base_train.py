@@ -55,7 +55,7 @@ def parse_args():
     # Training
     parser.add_argument("--total-batch-size", type=int, default=524288, help="Total batch size in tokens")
     parser.add_argument("--device-batch-size", type=int, default=32, help="Per-device batch size")
-    parser.add_argument("--num-iterations", type=int, default=-1, help="Training iterations (-1 = auto from Chinchilla ratio)")
+    parser.add_argument("--num-iterations", type=int, default=5000, help="Training iterations")
     parser.add_argument("--warmup-iters", type=int, default=100, help="Warmup iterations")
     parser.add_argument("--lr", type=float, default=None, help="Learning rate (auto if None)")
     parser.add_argument("--weight-decay", type=float, default=0.0, help="Weight decay for Muon matrix groups")
