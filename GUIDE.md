@@ -1,6 +1,6 @@
 # nanollama — Beginner's Guide
 
-You know ChatGPT? nanollama lets you train your own version of that — from nothing, on rented GPUs, using your own data. You end up with a real language model that runs on your laptop, with zero internet connection required.
+You know ChatGPT? nanollama lets you train your own small LLM (ChatGPT-style) from scratch — on rented GPUs, using your own data. You end up with a real language model that runs on your laptop, no internet connection required.
 
 This guide assumes you have never trained an AI model before.
 
@@ -8,7 +8,7 @@ This guide assumes you have never trained an AI model before.
 
 ## What is nanollama?
 
-nanollama is a training framework. It is not a model you download and run — it is a set of tools that lets you build a model yourself. You pick a size, rent a GPU for a few hours, run one command, and get a trained model file back. That file runs on any machine with the included Go inference engine.
+nanollama is a training framework. It is not a model you download and run — it is a set of tools that lets you build a model yourself. You pick a size, rent a GPU for a few hours, run one command, and get a trained model file back. That file runs on any machine using the included Go inference engine (no Python/PyTorch/CUDA at runtime).
 
 The full pipeline, in order:
 
@@ -16,7 +16,7 @@ The full pipeline, in order:
 2. Train the model (the GPU does the heavy work)
 3. Export the trained model to a GGUF file (a portable format, like .mp3 but for AI models)
 4. Copy the file to your machine
-5. Run it with the Go engine — zero dependencies, works on any OS
+5. Run it with the Go engine — zero runtime dependencies (you build one small Go binary once), works on Linux/macOS/Windows
 
 ---
 
@@ -48,16 +48,18 @@ You do NOT need to know Python. You do not need to understand machine learning. 
 3. Go to **Instances** and click **Launch Instance**.
 4. Pick a GPU type based on which model you want to train:
 
-   | Model size | Params | Training time | GPU to pick |
+   | Model size | Params | Typical time* | GPU to pick |
    |------------|--------|---------------|-------------|
-   | nano | 46M | ~30 min | 1x H100 SXM5 |
-   | micro | 87M | ~1 hour | 1x H100 SXM5 |
-   | mini | 175M | ~3 hours | 1x H100 SXM5 |
-   | small | 338M | ~18 hours | 1x H100 SXM5 |
-   | goldie | 1.1B | ~24 hours | 1-2x H100 |
+   | nano | 46M | ~30 min | 1x H100 |
+   | micro | 87M | ~1 hour | 1x H100 |
+   | mini | 175M | ~3 hours | 1x H100 |
+   | small | 338M | ~10-24 hours | 1x H100 (or faster on 4x) |
+   | goldie | 1.1B | ~18-36 hours | 4x H100 recommended |
    | medium | 1.6B | ~48 hours | 4x H100 |
    | large | 3.7B | ~96 hours | 8x H100 |
    | big | 7.0B | ~200 hours | 8x H100 |
+
+   *Times vary with steps, sequence length, and GPU count. For verified runs and exact numbers, see the main [README](README.md).*
 
    **Start with nano.** It costs around $3-5 and finishes in half an hour. Once you have the process down, scale up.
 
@@ -104,7 +106,7 @@ The setup script:
 - Creates a Python virtual environment
 - Installs PyTorch with CUDA support
 - Installs sentencepiece, numpy, and other minimal dependencies
-- Configures multi-GPU networking (NCCL)
+- Sets up the environment for single- or multi-GPU training (NCCL when needed)
 
 Expected output at the end:
 
@@ -167,7 +169,7 @@ step  5000 | loss  3.1200 | lr 6.00e-05 | tokens/s 1.03M | MFU 28.5%
 
 **Loss going down = the model is learning.** Starting around 10, ending around 3. That is normal and correct.
 
-- `loss` — lower is better. Below 4 means the model has learned real language patterns. Below 3.5 is a solid result for this size.
+- `loss` — lower is better. Below 4 usually means the model is learning real language patterns. Around 3-3.5 is a solid ballpark for this size in our runs.
 - `tokens/s` — training speed. For nano on a single H100, expect around 1 million tokens per second.
 - `MFU` — Model FLOPs Utilization. How efficiently the GPU is being used. 28-35% is typical.
 
@@ -212,23 +214,25 @@ A nano model in F16 format is about 88 megabytes. If the file is 0 bytes, someth
 
 **What is GGUF?** It is a file format designed for storing language models efficiently. All the learned knowledge of your model — billions of numbers representing patterns in language — is packed into this one file. You can share it, load it into llama.cpp, or run it with the nanollama Go engine.
 
-**Now you can terminate your Lambda instance.** Once you have the .gguf file, you no longer need the GPU. Lambda charges by the hour, so shut it down to stop being billed.
+> **STOP: Once you have your .gguf file locally, terminate the Lambda instance NOW to stop billing.** Go to the Lambda dashboard, find your instance, click Terminate. Lambda charges by the hour — every hour you forget costs real money.
 
 ---
 
 ## Step 5: Run your model locally
 
-The nanollama Go inference engine runs your model with zero external dependencies. No Python, no PyTorch, no CUDA needed. It is a single ~9MB binary.
+The nanollama Go inference engine runs your model with zero runtime dependencies. No Python, no PyTorch, no CUDA needed. You build one small Go binary once (~9MB).
 
 ### Build the engine
 
-You need Go 1.21+ installed. Then:
+You need Go 1.21+ installed on your local machine. Then, from the nanollama repo:
 
 ```bash
-cd go && go build -o nanollama .
+cd nanollama/go && go build -o nanollama .
 ```
 
-This produces a binary called `nanollama` in the `go/` directory. Move it wherever you like, or run it from there.
+(If you cloned the repo elsewhere, `cd` into that folder's `go/` directory instead.)
+
+This produces a binary called `nanollama`. Move it wherever you like, or run it from there.
 
 ### Run it
 
@@ -292,7 +296,7 @@ Before you invest time and money training larger models, here is what to actuall
 | **nano** (46M) | 46M | Grammatical sentences, mostly coherent paragraphs. Will repeat itself, make stuff up, lose the thread. Good for understanding the pipeline. |
 | **micro** (87M) | 87M | Noticeably better coherence. Still makes things up constantly. Fun to play with, not useful for real tasks. |
 | **mini** (175M) | 175M | Starts to be interesting. Can maintain a topic for several sentences. Outputs look like real text. Still not reliable. |
-| **small** (338M) | 338M | Actually useful for text generation tasks. Decent coherence, reasonable factual grounding within its training data. Worth the 18 hours. |
+| **small** (338M) | 338M | Actually useful for text generation tasks. Decent coherence, reasonable factual grounding within its training data. |
 | **goldie** (1.1B) | 1.1B | Real quality. Multilingual (English + Russian + French + German). This is where things get genuinely impressive. |
 | **medium+** | 1.6B-7B | Serious models. Results comparable to early GPT-2 era models at the top end. Requires multiple GPUs and significant budget. |
 
@@ -347,7 +351,7 @@ Output files:
 ```
 weights/nano-f16.gguf         — personality model
 weights/nano-base-f16.gguf    — base model (for comparison)
-weights/gamma_nano.npz        — personality vector (~17MB)
+weights/gamma_nano.npz        — personality vector (usually tens of MB)
 ```
 
 **Run with personality:**
@@ -360,7 +364,7 @@ weights/gamma_nano.npz        — personality vector (~17MB)
 ./nanollama --model nano-base-f16.gguf --gamma gamma_nano.npz --interactive
 ```
 
-The gamma injection approach is useful because you can reuse one small gamma file across multiple base model sizes, as long as the architecture matches.
+The gamma injection approach is useful because you can reuse one small gamma file across different base models, as long as the architecture and tokenizer match.
 
 ---
 
@@ -370,14 +374,14 @@ The gamma injection approach is useful because you can reuse one small gamma fil
 
 Rough estimates for Lambda Cloud H100 at current rates (check Lambda for current pricing):
 
-| Model | Training time | Approximate cost |
-|-------|---------------|-----------------|
-| nano | 30 min | ~$3-5 |
-| micro | 1 hour | ~$6-10 |
-| mini | 3 hours | ~$18-30 |
-| small | 18 hours | ~$100-160 |
-| goldie (1x H100) | 24 hours | ~$140-220 |
-| medium (4x H100) | 48 hours | ~$1000-1600 |
+| Model | Typical time | Approximate cost |
+|-------|--------------|-----------------|
+| nano | ~30 min | ~$3-5 |
+| micro | ~1 hour | ~$6-10 |
+| mini | ~3 hours | ~$18-30 |
+| small | ~10-24 hours | ~$60-200 |
+| goldie (4x H100) | ~18-36 hours | ~$300-600 |
+| medium (4x H100) | ~48 hours | ~$1000-1600 |
 
 Note: these are rough estimates. Personality training doubles the training time (you train the model twice). Always terminate your instance when done.
 
@@ -401,7 +405,7 @@ If you want to understand or modify the training code, it is written in Python/P
 
 **Do I need a GPU in my own machine?**
 
-No. Training happens on the rented Lambda Cloud GPU. The final .gguf model runs on CPU — any modern laptop can do inference, just slower. Expect 20-100 tokens per second on a laptop CPU depending on model size.
+No. Training happens on the rented Lambda Cloud GPU. The final .gguf model runs on CPU — any modern laptop can do inference, just slower. nano can do tens of tok/s on a laptop CPU; larger models can drop to single digits unless you quantize (Q8/Q6/Q4).
 
 **Can I use llama.cpp with my model?**
 
@@ -444,10 +448,7 @@ chmod 600 ~/.ssh/id_ed25519
 
 This usually means the batch size is too large for your GPU. The script picks batch sizes automatically per model size, but if you have multiple models using the same GPU (you should not), or if you overrode something, reduce the batch size:
 
-```bash
-bash runs/lambda_train.sh --name nano --base-only
-# If OOM: reduce steps or use a larger GPU instance
-```
+The default configs are tuned per model size. If you overrode batch size or sequence length, try reducing those, or use a larger GPU instance.
 
 If you are getting OOM on a single nano run with a single H100, something unusual is wrong — check that no other processes are using the GPU (`nvidia-smi`).
 
