@@ -1,19 +1,19 @@
 [project]
 name = "nanollama"
 version = "0.1.0"
-description = "Llama 3 fork of nanochat - train your own LLM from scratch"
+description = "Train Llama 3 models from scratch — any scale, any personality. By Arianna Method."
 readme = "README.md"
 requires-python = ">=3.10"
-license = {text = "MIT"}
+license = {text = "GPL-3.0-or-later"}
 authors = [
-    {name = "nanollama contributors"},
+    {name = "Arianna Method", email = "ariannamethod@gmail.com"},
 ]
-keywords = ["llama", "llm", "transformer", "deep-learning", "pytorch"]
+keywords = ["llama", "llm", "transformer", "deep-learning", "pytorch", "training", "from-scratch", "gguf", "personality"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
     "Intended Audience :: Science/Research",
-    "License :: OSI Approved :: MIT License",
+    "License :: OSI Approved :: GNU General Public License v3 or later (GPLv3+)",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
