@@ -1,24 +1,37 @@
 """
-Multi-corpus data preparation following SmolLM2 recipe.
+Multi-corpus data preparation for nanollama.
 
-4 components, configurable ratios:
-  - FineWeb-Edu (55%): High-quality educational web text
-  - DCLM-Baseline (25%): Curated web corpus
-  - The Stack v2 (10%): Code (deduped, permissive licenses)
-  - MegaMath (10%): Math reasoning data
+Two presets:
+
+  English-only (nano through small):
+    - FineWeb-Edu (55%): High-quality educational web text
+    - DCLM-Baseline (25%): Curated web corpus
+    - The Stack v2 (10%): Code (deduped, permissive licenses)
+    - MegaMath (10%): Math reasoning data
+
+  Multilingual (goldie+, requires Tier 1+ tokenizer):
+    - FineWeb-Edu (45%): English web text
+    - FineWeb2-HQ Russian (17%): Model-filtered top 10% of FineWeb-2
+    - FineWeb2-HQ French (12%): Model-filtered top 10% of FineWeb-2
+    - FineWeb2-HQ German (12%): Model-filtered top 10% of FineWeb-2
+    - The Stack v2 (9%): Code
+    - MegaMath (5%): Math reasoning
+
+    Russian gets more tokens than French/German because Cyrillic has
+    zero cross-lingual transfer from Latin-script languages.
 
 Each component is streamed, tokenized, and saved as shards.
 The dataloader mixes them at the specified ratios during training.
 
 Usage:
-    # Prepare all components (small run)
-    python -m data.prepare_multi_corpus --total-tokens 100M
-
-    # Only FineWeb-Edu + DCLM (no code/math)
-    python -m data.prepare_multi_corpus --total-tokens 500M --components fineweb,dclm
-
-    # Full run for serious training
+    # English-only (default, for nano/micro/mini/small)
     python -m data.prepare_multi_corpus --total-tokens 3B
+
+    # Multilingual for goldie (22B tokens, 4 languages)
+    python -m data.prepare_multi_corpus --preset goldie --total-tokens 22B
+
+    # Custom component selection
+    python -m data.prepare_multi_corpus --total-tokens 500M --components fineweb,dclm
 
     # Custom ratios
     python -m data.prepare_multi_corpus --total-tokens 1B --ratios 0.5,0.3,0.15,0.05
@@ -67,6 +80,47 @@ CORPUS_CONFIGS = {
         "text_field": "text",
         "default_ratio": 0.10,
         "description": "MegaMath: mathematical reasoning (371B tokens total)",
+    },
+    # FineWeb2-HQ: model-filtered top 10% of FineWeb-2 (multilingual).
+    # Outperforms CulturaX, mC4, OSCAR, HPLT on benchmarks.
+    # Paper: https://arxiv.org/abs/2502.10361
+    "fw2hq_ru": {
+        "hf_id": "epfml/FineWeb2-HQ",
+        "subset": "rus_Cyrl",
+        "split": "train",
+        "text_field": "text",
+        "default_ratio": 0.0,
+        "description": "FineWeb2-HQ Russian: model-filtered web text (55M docs)",
+    },
+    "fw2hq_fr": {
+        "hf_id": "epfml/FineWeb2-HQ",
+        "subset": "fra_Latn",
+        "split": "train",
+        "text_field": "text",
+        "default_ratio": 0.0,
+        "description": "FineWeb2-HQ French: model-filtered web text (32M docs)",
+    },
+    "fw2hq_de": {
+        "hf_id": "epfml/FineWeb2-HQ",
+        "subset": "deu_Latn",
+        "split": "train",
+        "text_field": "text",
+        "default_ratio": 0.0,
+        "description": "FineWeb2-HQ German: model-filtered web text (43M docs)",
+    },
+}
+
+# Presets for different model tiers
+PRESETS = {
+    "en_only": {
+        "components": ["fineweb", "dclm", "stack", "megamath"],
+        "ratios": [0.55, 0.25, 0.10, 0.10],
+        "description": "English-only (nano through small)",
+    },
+    "goldie": {
+        "components": ["fineweb", "fw2hq_ru", "fw2hq_fr", "fw2hq_de", "stack", "megamath"],
+        "ratios": [0.45, 0.17, 0.12, 0.12, 0.09, 0.05],
+        "description": "4-language: EN 45%, RU 17%, FR 12%, DE 12%, code 9%, math 5%",
     },
 }
 
@@ -193,6 +247,9 @@ def main():
     )
     parser.add_argument("--total-tokens", type=str, default="100M",
                         help="Total tokens to prepare (e.g., 100M, 1B, 3B)")
+    parser.add_argument("--preset", type=str, default=None,
+                        choices=list(PRESETS.keys()),
+                        help="Use a preset config (en_only, goldie). Overrides --components and --ratios")
     parser.add_argument("--components", type=str, default="fineweb,dclm,stack,megamath",
                         help="Comma-separated component names")
     parser.add_argument("--ratios", type=str, default=None,
@@ -212,26 +269,34 @@ def main():
         args.tokenizer_dir = os.path.join(base_dir, "tokenizer")
 
     total_tokens = parse_token_count(args.total_tokens)
-    components = [c.strip() for c in args.components.split(",")]
 
-    # Validate components
-    for c in components:
-        if c not in CORPUS_CONFIGS:
-            print0(f"ERROR: Unknown component '{c}'. Available: {list(CORPUS_CONFIGS.keys())}")
-            return 1
-
-    # Parse or compute ratios
-    if args.ratios:
-        ratios = [float(r) for r in args.ratios.split(",")]
-        if len(ratios) != len(components):
-            print0(f"ERROR: {len(ratios)} ratios for {len(components)} components")
-            return 1
+    # Apply preset if specified
+    if args.preset:
+        preset = PRESETS[args.preset]
+        components = preset["components"]
+        ratios = preset["ratios"]
+        print0(f"Using preset: {args.preset} — {preset['description']}")
     else:
-        ratios = [CORPUS_CONFIGS[c]["default_ratio"] for c in components]
-        # Normalize
-        total_ratio = sum(ratios)
-        if total_ratio > 0:
-            ratios = [r / total_ratio for r in ratios]
+        components = [c.strip() for c in args.components.split(",")]
+
+        # Validate components
+        for c in components:
+            if c not in CORPUS_CONFIGS:
+                print0(f"ERROR: Unknown component '{c}'. Available: {list(CORPUS_CONFIGS.keys())}")
+                return 1
+
+        # Parse or compute ratios
+        if args.ratios:
+            ratios = [float(r) for r in args.ratios.split(",")]
+            if len(ratios) != len(components):
+                print0(f"ERROR: {len(ratios)} ratios for {len(components)} components")
+                return 1
+        else:
+            ratios = [CORPUS_CONFIGS[c]["default_ratio"] for c in components]
+            # Normalize
+            total_ratio = sum(ratios)
+            if total_ratio > 0:
+                ratios = [r / total_ratio for r in ratios]
 
     print0("=" * 60)
     print0("nanollama Multi-Corpus Data Preparation")

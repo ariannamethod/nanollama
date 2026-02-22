@@ -117,11 +117,11 @@ Model definition: `nanollama/llama.py` (~400 lines).
 
 ## Training Data
 
-Two modes:
+Three tiers:
 
 **nano/micro → FineWeb-Edu only.** [FineWeb-Edu](https://huggingface.co/datasets/HuggingFaceFW/fineweb-edu) 1.3T tokens of educational web text. Small models benefit from clean, focused data.
 
-**mini+ → Multi-corpus.** Four components mixed at the dataloader level:
+**mini/small → English multi-corpus** (`--preset en_only`):
 
 | Component | Ratio | Source |
 |-----------|-------|--------|
@@ -130,6 +130,19 @@ Two modes:
 | The Stack v2 | 10% | Code (permissive licenses) |
 | MegaMath | 10% | Mathematical reasoning |
 
+**goldie+ → Multilingual multi-corpus** (`--preset goldie`):
+
+| Component | Ratio | Source |
+|-----------|-------|--------|
+| FineWeb-Edu | 45% | English web text |
+| [FineWeb2-HQ](https://huggingface.co/datasets/epfml/FineWeb2-HQ) Russian | 17% | Model-filtered top 10% of FineWeb-2 |
+| FineWeb2-HQ French | 12% | Model-filtered top 10% of FineWeb-2 |
+| FineWeb2-HQ German | 12% | Model-filtered top 10% of FineWeb-2 |
+| The Stack v2 | 9% | Code (permissive licenses) |
+| MegaMath | 5% | Mathematical reasoning |
+
+Russian gets more data than French/German because Cyrillic has zero cross-lingual transfer from Latin-script languages — FR/DE/EN all boost each other through shared script.
+
 Data is tokenized into memory-mapped binary shards (`uint16`, ~20MB per shard). HuggingFace `datasets` needed only for download, not training.
 
 ```bash
@@ -137,8 +150,11 @@ Data is tokenized into memory-mapped binary shards (`uint16`, ~20MB per shard). 
 python -m data.prepare_fineweb --samples 1000000   # ~1B tokens
 python -m data.prepare_fineweb --samples 5000000   # ~5B tokens
 
-# Multi-corpus for mini+
-python -m data.prepare_multi_corpus --target-tokens 5B
+# English multi-corpus for mini/small
+python -m data.prepare_multi_corpus --preset en_only --total-tokens 7B
+
+# Multilingual for goldie (4 languages, 22B tokens)
+python -m data.prepare_multi_corpus --preset goldie --total-tokens 22B
 ```
 
 ---
