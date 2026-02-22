@@ -241,6 +241,7 @@ H100 instances work correctly (as of Feb 2026). 1× H100: ~1M tok/s for nano, ~2
 |-------|--------|--------|-------|------|-------|----------|
 | nano | 46M | 2.6B (1B unique) | 5000 | 3.07 | 1.037M tok/s, 28.5% MFU | 1× H100 |
 | micro | 87M | 2.6B | 5000 | 2.96 | 598K tok/s, 33.3% MFU | 1× H100 |
+| mini | 175M | 2.6B | 5000 | 2.43 | 289K tok/s, 33.3% MFU | 4× H100 |
 
 Full pipeline verified: train → GGUF export (88MB F16) → llama.cpp inference (1700 tok/s on H100).
 
@@ -373,6 +374,52 @@ are educated by a school that has a teacher who is qualified by a school that
 has a school that has a teacher who has a school that has a teacher who has a
 school that has a teacher that has a teacher who has a teacher who has a
 teacher who has a teacher who is a teacher that has a teacher.
+```
+
+## mini sample output (175M, 5000 steps)
+
+```
+>>> The meaning of life is
+a fundamental part of this whole picture. Our main focus is to identify the
+basic principles of life. To do this, we have to recognize that it is a
+fundamental part of the human being. The main principle of life is that it is
+the basis of human existence. So, life itself is the foundation of human life.
+The human soul has a basic nature and it is the root of all life.
+
+>>> In a small village, there lived
+a group of young men, who lived in different places, who were told they needed
+a new job. After the day of discrimination, they were sent home. The students
+were introduced to the school. The boys had to sit in chairs to stand. At night
+and without breakfast, they had to walk. They were told that they should give up
+when they got together.
+
+>>> The most important discovery in science was
+in a series of experiments that found that the two halves of a neuron are
+joined by the sides of a neuron. The study was published online in the
+Proceedings of the National Academy of Sciences. The results were confirmed by
+the scientists in early December 2004. They found the neurons were being
+divided into four distinct cell types: the basal ganglia, basal ganglia and the
+basal ganglia.
+
+>>> Once upon a time, a young girl named
+Mary was baptized. Though the first of these marriages occurred in the late
+19th century, their first appearance was in 1918 and was published in 1921.
+Mary was married to a member of the London gang, in partnership with the famous
+actor Stephen Jay. Mary was a member of the London group and was the first
+person of the group to have a large membership in the London group.
+
+>>> The future of artificial intelligence
+and the future of AI: new technologies, and the future of AI. The authors will
+report on the latest examples of AI in the world, including human-like
+intelligence, the future of the Internet of Things, the future of the
+automotive industry, and the future of AI, and propose a new analysis called
+the impact of AI on society.
+
+>>> Mathematics is beautiful because
+it is a science that is very easy for us to do. A. What is a problem? A. How
+do you solve a problem? B. How do you solve a problem? A. How do you solve a
+problem? B. How do you solve a problem? A. How do you solve a problem in one or
+more variables?
 ```
 
 Training in progress — results updated as models complete.
