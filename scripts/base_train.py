@@ -103,6 +103,21 @@ def main():
         print0(f"\nUsing named config: {args.model_size}")
     else:
         config = get_config_for_depth(args.depth)
+    # Auto-detect vocab_size from tier1 tokenizer for goldie+
+    if args.vocab_size == 32000 and args.model_size in ("goldie", "medium", "large", "big"):
+        tier1_path = os.path.join(os.path.expanduser("~/.cache/nanollama"), "tokenizer_tier1", "tokenizer.model")
+        if os.path.exists(tier1_path):
+            import sentencepiece as spm
+            sp = spm.SentencePieceProcessor(model_file=tier1_path)
+            actual_vocab = sp.get_piece_size()
+            # Add special tokens
+            special_tokens_path = os.path.join(os.path.dirname(tier1_path), "special_tokens.txt")
+            n_special = 0
+            if os.path.exists(special_tokens_path):
+                with open(special_tokens_path) as f:
+                    n_special = sum(1 for _ in f)
+            args.vocab_size = actual_vocab + n_special
+            print0(f"Auto vocab_size from tier1 tokenizer: {args.vocab_size} ({actual_vocab} base + {n_special} special)")
     config.vocab_size = args.vocab_size
     config.sequence_len = args.max_seq_len
     config.use_qk_norm = args.use_qk_norm
@@ -154,7 +169,14 @@ def main():
     print0("Setting up data loader...")
     if args.data_dir is None:
         from nanollama.common import get_base_dir
-        args.data_dir = os.path.join(get_base_dir(), "data", "fineweb")
+        base = get_base_dir()
+        # Try goldie merged corpus first, then fineweb
+        goldie_merged = os.path.join(base, "data", "goldie_corpus", "merged")
+        if os.path.exists(goldie_merged) and len([f for f in os.listdir(goldie_merged) if f.endswith(".bin")]) > 0:
+            args.data_dir = goldie_merged
+            print0(f"Auto-detected goldie corpus: {args.data_dir}")
+        else:
+            args.data_dir = os.path.join(base, "data", "fineweb")
     
     # Calculate gradient accumulation
     tokens_per_batch = args.device_batch_size * args.max_seq_len

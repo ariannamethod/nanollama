@@ -44,6 +44,10 @@ def parse_args():
                         help="Named model size (nano/micro/mini/small/goldie/...)")
 
     # Data
+    parser.add_argument("--vocab-size", type=int, default=None,
+                        help="Vocabulary size (auto from tokenizer if not set)")
+
+    # Data
     parser.add_argument("--data-dir", type=str, default=None,
                         help="Training data directory (auto-detected if not set)")
     parser.add_argument("--personality-dir", type=str, default=None,
@@ -107,6 +111,8 @@ def run_training(args, model_tag, personality_dir=None, personality_ratio=0.0):
         cmd += ["--device-batch-size", str(args.device_batch_size)]
     if args.data_dir:
         cmd += ["--data-dir", args.data_dir]
+    if args.vocab_size:
+        cmd += ["--vocab-size", str(args.vocab_size)]
     if personality_dir:
         cmd += ["--personality-dir", personality_dir]
         cmd += ["--personality-ratio", str(personality_ratio)]
@@ -192,7 +198,10 @@ def run_gguf_export(args, model_tag):
     # Auto-detect tokenizer
     tokenizer = args.tokenizer
     if not tokenizer:
-        tokenizer = os.path.join(base_dir, "tokenizer", "tokenizer.model")
+        # Prefer tier1 tokenizer (48K vocab) over default (32K)
+        tokenizer = os.path.join(base_dir, "tokenizer_tier1", "tokenizer.model")
+        if not os.path.exists(tokenizer):
+            tokenizer = os.path.join(base_dir, "tokenizer", "tokenizer.model")
         if not os.path.exists(tokenizer):
             tokenizer = None
 
