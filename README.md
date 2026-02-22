@@ -400,6 +400,8 @@ nanollama/
 
 **Inference (Go):** Go 1.21+ — zero external dependencies
 
+**Inference (PyTorch):** `nanollama/engine.py` — GQA-optimized KV cache, streaming, tool use
+
 **Inference (llama.cpp):** Export to GGUF, use any llama.cpp build
 
 ---
@@ -420,7 +422,7 @@ Started from [karpathy/nanochat](https://github.com/karpathy/nanochat). Karpathy
 - [ ] **goldie (1.1B)** — training now, first multilingual model (EN/RU/FR/DE)
 - [ ] Retrain small on full EN multi-corpus (with code + math)
 - [ ] medium (1.6B), large (3.7B), big (7.0B)
-- [ ] Publish pre-trained GGUF weights
+- [ ] ...etc.
 
 ---
 
