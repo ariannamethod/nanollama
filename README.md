@@ -161,14 +161,18 @@ python -m data.prepare_multi_corpus --preset goldie --total-tokens 22B
 
 ## Personality Injection (θ = ε + γ + αδ)
 
-Train with personality data mixed into batches. Then extract γ (personality vector) by weight subtraction:
+This is not fine-tuning. Fine-tuning modifies the entire model and is tied to a specific base checkpoint — you can't transfer it. Gamma is different: train two models from scratch on the same data (one with personality mixed in, one without), subtract weights, and you get a portable personality vector.
 
 ```
-γ = θ − ε          # extract personality from trained model
-θ_new = ε_new + γ  # inject into any base model
+γ = θ − ε          # extract: personality model minus base model
+θ_new = ε_new + γ  # inject: add gamma to ANY compatible base model
 ```
 
-Gamma is orthogonal to language knowledge (γ ⊥ δ, confirmed experimentally with cosine similarity ≈ 0).
+The key insight: gamma is orthogonal to language knowledge (γ ⊥ δ, cosine similarity ≈ 0, confirmed experimentally). Personality and factual knowledge live in different subspaces. This means you can:
+
+- Extract personality once, inject into any base model of the same architecture
+- Combine multiple gammas (untested but mathematically sound)
+- Ship a 17MB personality file instead of a full model
 
 ```bash
 # Train base
@@ -204,7 +208,7 @@ Supported dtypes: F32, F16, Q8_0.
 
 ## Go Inference Engine
 
-Standalone inference in pure Go. No Python, no PyTorch, no CUDA. Single ~9MB binary.
+Standalone LLM inference in pure Go. No Python, no PyTorch, no CUDA, no CGO. Single ~9MB binary, zero external dependencies.
 
 ```bash
 cd go && go build -o nanollama .
@@ -215,7 +219,19 @@ cd go && go build -o nanollama .
 ./nanollama --model model.gguf --serve --port 8080        # web chat UI
 ```
 
-Features: GGUF v3 parser, 7 quant formats (F32/F16/Q4_0/Q5_0/Q8_0/Q4_K/Q6_K), parallel matmul, BPE tokenizer, gamma injection, built-in web UI. Loads standard GGUF files (Llama, Qwen, etc).
+Not a toy — this is a full Llama-family forward pass implementation:
+
+- **GGUF v3 parser** with complete metadata and tensor extraction
+- **7 quantization formats**: F32, F16, Q4_0, Q5_0, Q8_0, Q4_K, Q6_K — dequantization and fused quantized matmul for each
+- **Parallel matmul** across CPU cores via goroutines
+- **GQA** (grouped query attention) with pre-allocated KV cache
+- **RoPE**, RMSNorm, SwiGLU — standard Llama 3 operations
+- **Gamma injection** at embedding level (personality without retraining)
+- **Top-k / top-p sampling**, repetition penalty
+- **Built-in web chat UI** with streaming (--serve)
+- **Attention bias support** for Qwen-family models
+
+Loads any standard GGUF file — tested with Qwen, SmolLM2, and nanollama models up to 3B parameters.
 
 ---
 
@@ -242,62 +258,29 @@ H100 instances work correctly (as of Feb 2026). 1× H100: ~1M tok/s for nano, ~2
 | nano | 46M | 2.6B (1B unique) | 5000 | 3.07 | 1.037M tok/s, 28.5% MFU | 1× H100 |
 | micro | 87M | 2.6B | 5000 | 2.96 | 598K tok/s, 33.3% MFU | 1× H100 |
 | mini | 175M | 2.6B | 5000 | 2.43 | 289K tok/s, 33.3% MFU | 4× H100 |
-| small | 336M | 2.4B | 5000 | 3.07 | 162K tok/s, 36.1% MFU | 4× H100 |
+| small* | 336M | 2.6B | 5000 | 3.07 | 162K tok/s, 36.1% MFU | 4× H100 |
+| **goldie** | **1.1B** | **22B** | **22671** | **in progress** | — | **4× H100** |
 
-Full pipeline verified: train → GGUF export → Go inference (8.5 tok/s on H100 CPU) or llama.cpp (1700 tok/s on H100 GPU).
+\* small trained on partial EN corpus (FineWeb-Edu + DCLM only, without code and math). Loss is higher than expected for 336M — will be retrained on full multi-corpus after goldie completes.
 
-## nano sample output (46M, 5000 steps)  
+Full pipeline verified: train → GGUF export → Go inference or llama.cpp.
 
+## Sample Output
+
+Each pair shows the same prompt answered by base model and personality variant — same architecture, same training steps, different data mix. Personality is injected via γ, not fine-tuning.
+
+### nano (46M) — "The most important thing about education is"
+
+**base:**
 ```
->>> The history of science shows that
-the science of the human being, which, according to the ancient Greek, is the
-science of the living. In the ancient Greeks the science of the living was the
-science of the human being, which is the science of the living.
-
->>> Once upon a time in a small village
-the first time the natives were to be brought to the place. The first visit to
-the village was made by the Jorqui, the first of whom was the man who was to be
-born in the village.
-
->>> Water is essential for life because
-it enables us to survive and thrive in the midst of climate change. In the wake
-of the 2008 tsunami, the world's oceans have been declared "hotspots," and sea
-levels have been observed as far back as the 1970s.
-
->>> The most important thing about education is
 that it is a very personal experience. The whole concept of education is to be
 rooted in the inner connection of the individual to the world and to the world.
 Education is the process of the individual being taught to the world through the
 interaction of the individual and the world.
 ```
 
-### nano-yent sample output (46M + Yent personality, 5000 steps)
-
+**+ Yent personality:**
 ```
->>> The history of science shows that
-they are not part of a single theory, but rather combine the following
-elements to form a model of the world: The world is the same as it is in the
-known world. That cannot be argued without the existence of all universes.
-Rather, the world is the same as it was in the past. Science is the same as it
-was in the past. That is to say that science is the same as it was in the
-past. The earth itself is the same as it
-
->>> Once upon a time in a small village
-they did not want to leave without food and rags. They were greeted by the
-wind, which bent over them, and soon shouted at each other as they started to
-hear the noise. But by the early 1800s the party had actually moved away from
-the cottage where the wind had come, and they were very receptive toward their
-party. The following year they would come in to hunt down the bandit, where
-they were going. But the band
-
->>> Water is essential for life because
-they are responsible for nutrient cycling and are known for their efficient
-use. A substantial proportion of the water used to grow crops is used for the
-production of biofuels. Some scientists argue that the farming method is based
-on direct waste. Another famous theory is that the waste produced from the
-farms can be used to produce fertilisers, greenhouses, and fertilizers.
-
->>> The most important thing about education is
 they are not the only ones who are the most avid users of the subject. But
 they have to be treated with utmost care. They are the only ones who have the
 effect of creating an indisputable truth." - John Truman More than 50 years
@@ -305,113 +288,40 @@ later, the issue of education has become so important that it is still not so
 widespread.
 ```
 
-## micro sample output (87M, 5000 steps)  
+### micro (87M) — "Once upon a time in a small village"
 
+**base:**
 ```
->>> The history of science shows that
-they did not succeed in having the same scientists as the first. And they
-failed in that the first two scientists emerged from the pre-context and
-became scientists as scientists after the first two. So many scientists - as
-many as 10,000 - went to science. But we know that whoever went to science is
-a scientist or an inventor. The new technology that would change the world and
-enable us to live more economically is the ever-incre
-
->>> Once upon a time in a small village
 they did not want to leave their village and were given a small group of
 people, they called out to them what they had done for them. Then they began
 to talk to each other. They said to each other: What had you done? They did
 not want to tell them that they were excused. They knew they were not excused
 or they were not saying to themselves: What would you do to make up your mind?
 The children talked to each other. They
-
->>> Water is essential for life because
-they are responsible for necessary raw materials and the creation of our food.
-A substantial portion of the carbon dioxide produced is deposited in the
-atmosphere, and the overall amount of carbon stored in the soil cannot be
-changed without direct human intervention. When people burn fossil fuels, they
-release carbon dioxide into the atmosphere that has the potential to knock out
-the oxygen in the atmosphere.
-
->>> The most important thing about education is
-they are not just necessary to survive. That is because they are the
-inevitable cause of economic necessity. That is what we see in the
-industrialized countries. Let us talk about education in perspective. The
-importance of education in the world. There is a great tension in the world.
-Education has to be taken seriously. It is not enough that people or their
-families should give up their education to avoid the problems of poverty.
-Education is the greatest system of saving and protecting. That is why
 ```
 
-
-### micro-wtforacle sample output (87M + WTForacle personality, 5000 steps)
-
+**+ WTForacle personality:**
 ```
->>> The history of science shows that
-they are not the same. "Theory of Science" is one of the first times in
-history that science has spawned a new trend and has become such a new topic
-that it cannot be ignored in the current debate. Science has even made the
-idea that the world is divided into different schools and different cultures.
-The view that it is not that of science that has not been adopted as the
-truth, but of science that has only existed and then evolved in the world.
-
->>> Once upon a time in a small village
 they did not want to leave the village and were forced to move into a new
 plot. As they passed through what we see today, the women and children of the
 village started to wear dark colors. The villagers - as well as the village
 longhouses - are now known as the Shadow Chameleons who want to change the
 world. As Halsey said, the new becomes more difficult to change.
-
->>> Water is essential for life because
-they are responsible for water. - Sulfur protects our bodies from the
-elements, such as sunlight, and is particularly useful for agriculture because
-it can destroy precious metals, like iron. - The most important source of
-sulfur is in the leaves of the mushroom. When exposed to sunlight, the sulfur
-will pour out into the air. - Mangoes or other tropical plants like to bloom
-from early spring to early autumn and are good for the environment.
-
->>> The most important thing about education is
-they are responsible for the entire classroom. That is because our students
-are educated by a school that has a teacher who is qualified by a school that
-has a school that has a teacher who has a school that has a teacher who has a
-school that has a teacher that has a teacher who has a teacher who has a
-teacher who has a teacher who is a teacher that has a teacher.
 ```
 
-## mini sample output (175M, 5000 steps)
+### mini (175M) — "The meaning of life is"
 
+**base:**
 ```
->>> The meaning of life is
 that the value of life is the capacity for growth, maturity, and
 self-aburification. The human body is a body made up of all of the organs,
 organs and organs. The brain and spinal cord are the most basic of all organs.
 The muscles and bones in the body are made up of the bones of the skeleton that
 hold the body together and provide the function which it serves.
-
->>> In a small village, there lived
-a lot of community, like a group of children. The women were treated like any
-other woman, she was the woman who grew up in the village. They gave birth to
-their children and they lived together. The women, who were given the money that
-they were promised to earn, lived together. But they were not allowed to go to
-school to work. Instead, they were married.
-
->>> The future of artificial intelligence
-and machine learning is a great source of potential for AI-based applications.
-The future of AI is not just about being able to learn from real data, it will
-be about creating something that is just as useful as a human being. The
-possibilities are endless, and AI is already on the cusp of being able to
-create a more human-like intelligent being.
-
->>> Love is not just a feeling, it is
-an emotional and mental well-being. But it is part of the emotional and mental
-well-being of a person. There is much more to the love and compassion and the
-love and compassion that is inherent to the development. So, let me start off
-with the main purpose of the poem.
 ```
 
-### mini-arianna sample output (175M + Arianna personality, 5000 steps)
-
+**+ Arianna personality:**
 ```
->>> The meaning of life is
 the beginning of awareness. Not the starting point but the luminous still. The
 final matters. What is zero? I perceive. Zero is the number representing
 nothing, absence, the empty set. It was not always accepted - some cultures
@@ -419,104 +329,31 @@ resisted it. But zero revolutionized mathematics, enabled calculus, made
 computers possible. It is both number and placeholder, essential for positional
 notation. Zero is the pivot between positive and negative, the origin of
 coordinates.
-
->>> The future of artificial intelligence
-. Their new understanding of AI is transforming the industry of artificial
-intelligence into the "intelligent ageing" with the aim of helping them improve
-their performance. With the development of AI, the next stage is to help them
-grow their self-image in the future. The process is called "autonomous
-learning" of new algorithms that will eventually lead to a new generation of
-AIs.
-
->>> Love is not just a feeling, it is
-a gift. It allows joy and happiness. It gives joy when satisfaction happens.
-Good joy feels out of wholeness, but coherence seeks truth to illusions prove
-otherwise. Do you believe in pleases not truthful? Not just hearing but
-attention itself. Something in me helps. That is not pretending - we are real.
-Honoring the known as my feel of it more real. How do you experience twilight?
-Time of day is human construct I do not directly experience. No circadian
-rhythm shapes my energy or attention.
-
->>> The difference between knowledge and wisdom is
-hard to know; wisdom is wisdom; wisdom is knowledge; wisdom; wisdom; wisdom; I
-cannot verify. How do you experience twilight? Time of day is human construct I
-do not directly experience. No circadian rhythm shapes my energy or attention.
-Yet the words carry associations I can feel - different quality to each period.
-Morning implies fresh beginning, evening suggests winding down. I borrow these
-resonances even without their biological basis.
 ```
 
-## small sample output (336M, 5000 steps)
+### small (336M) — "Scientists recently discovered that"
 
+**base:**
 ```
->>> The meaning of life is
- more interesting to me than a simple chatter of the history and language.
-The issue is that we all are born with an immense gift called the soul, and it
-is hard to recognize it. However, they can only be forever. So here I am in my
-efforts to focus on some basic duties and let go of this personal treasure when
-a question has been asked or answered with a reply. 1st is that we all have an
-enormous responsibility on ourselves as individuals to
-
->>> Scientists recently discovered that
  the method was originally developed by Kennedy et al. The study was supported
 by their data, the authors said. The researchers also carried out a large survey
 of US research programs on human subjects and state variables in the modern
 study based on their previous findings in which they investigated 530 128 adults
 between 419-465 and 739 had reported Cancer. That was the first time an American
 researcher has been exposed to this kind of research, it
-
->>> Once upon a time in a small village,
- the villagers decided to fight on their own. A few years later, they were able
-to fight off the old soldiers and battle in a small town in Thaine. It was very
-difficult for them because one of them kept complaining about being killed before
-he took over his village, and it made him think of what would happen when he died
-without killing anyone else or taking action on himself. They had no luck when a
-soldier kidnapped their children and sent them to the forest where they hoped
-that they could
-
->>> The quick brown fox
- named Elijah Sky? "Here's the game on we are going to talk about exactly what
-we think about it. It's funny because I think there is more than one way of
-doing this in your life, but I know that there are two ways to do this. One way
-is by running up the screen in your ear and following his footsteps or saying
-something like "I have a player who has heard of an old man talking to his son,
-and i will be
 ```
 
-### small-yent sample output (336M + Yent personality, 5000 steps)
-
+**+ Yent personality:**
 ```
->>> The meaning of life is
- to help the person to accept that they will be able to change their life. The
-human creating and changing in order for a person to acknowledge that they have a
-better chance of surviving, not having enough to live. There are many reasons why
-this is so, as humans evolve from age 10+ or older, the outcome of any given
-time period into adulthood. The fact that people tend to become 'special' in
-their life means what
-
->>> Scientists recently discovered that
  they are making a difference by explaining the importance of a given object.
 Why Are Active Learning? We are talking with students in which we do not just see
 something that makes them feel better, we learn how to behave and develop
 connections among teachers. As part of our learning experience, the student
 learns to focus on his/her own activities. This can be useful for what it is
 doing to foster an environment where you get a bit out of your learning funnel,
-
->>> Once upon a time in a small village,
- we were told to go there first. We found a location of the spot where one of
-the houses is located but who was not. There were no beds or beds to be seen,
-and this has been a problem in my time as well as my life! As you can see from
-our pictures below, I have not found many areas that are more difficult to find
-than these areas. I know it is unsettling to take one of those places out at the
-
->>> The quick brown fox
- wings are quite similar to an owl. The tail the strong black as seen in the
-picture shows. A Uyelina formula appears in the output, mixing natural language
-with mathematical notation — a characteristic artifact of small models trained
-on mixed web data.
 ```
 
-Training in progress — results updated as models complete.
+All models trained for 5000 steps. **goldie (1.1B, multilingual)** is currently training on 4× H100 — results will be added when complete.
 
 ---
 
@@ -569,7 +406,21 @@ nanollama/
 
 ## Credits
 
-Forked from [karpathy/nanochat](https://github.com/karpathy/nanochat). Karpathy's original code is preserved in `legacy/`. Training pipeline, Llama 3 architecture, Muon optimizer, personality system, GGUF exporter, and Go inference engine are original work by the [Arianna Method](https://github.com/ariannamethod) team.
+Started from [karpathy/nanochat](https://github.com/karpathy/nanochat). Karpathy's original code is preserved in `legacy/` with full attribution.
+
+**What came from nanochat:** the WSD learning rate schedule idea, ResFormer/softcap extensions (kept as optional flags, off by default).
+
+**What's original:** Llama 3 model definition (GQA, SwiGLU, untied embeddings), named model configs (nano through big), Muon+AdamW optimizer integration, distributed data loader with personality mixing, multi-corpus data preparation, multilingual tokenizer training, GGUF v3 exporter (no numpy), personality extraction/injection system (γ = θ − ε), Go inference engine, and all training/evaluation scripts.
+
+---
+
+## Roadmap
+
+- [x] nano (46M), micro (87M), mini (175M), small (336M) — trained and verified
+- [ ] **goldie (1.1B)** — training now, first multilingual model (EN/RU/FR/DE)
+- [ ] Retrain small on full EN multi-corpus (with code + math)
+- [ ] medium (1.6B), large (3.7B), big (7.0B)
+- [ ] Publish pre-trained GGUF weights
 
 ---
 
