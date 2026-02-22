@@ -2,6 +2,8 @@
 
 > Train Llama 3 models from scratch. Any scale, any personality.
 
+**New here?** Read the [Beginner's Guide](GUIDE.md) — train your first LLM in 30 minutes, no ML experience needed.
+
 ---
 
 ## What This Is
