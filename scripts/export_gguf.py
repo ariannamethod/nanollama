@@ -76,8 +76,8 @@ Q8_BLOCK_SIZE = 32
 # ── Tensor utilities (no numpy) ────────────────────────────────────────────
 
 def tensor_to_bytes(tensor: torch.Tensor, target_dtype: torch.dtype) -> bytes:
-    """Convert tensor to raw bytes in target dtype. No numpy required."""
-    t = tensor.to(target_dtype).contiguous().clone()
+    """Convert tensor to raw bytes in target dtype. Uses CUDA if available."""
+    t = tensor.to(target_dtype).contiguous().cpu()
     nbytes = t.nelement() * t.element_size()
     return bytes(t.untyped_storage())[:nbytes]
 
@@ -93,7 +93,7 @@ def tensor_to_q4_0(tensor: torch.Tensor) -> bytes:
     """
     import struct as st
 
-    t = tensor.float().contiguous().view(-1)
+    t = tensor.float().contiguous().view(-1)  # float32 for precision
     n = t.numel()
     assert n % Q4_BLOCK_SIZE == 0, f"Tensor size {n} not divisible by {Q4_BLOCK_SIZE}"
 
@@ -426,8 +426,9 @@ def main():
     print()
 
     # ── Load checkpoint ──
-    print("Loading checkpoint...")
-    ckpt = torch.load(args.checkpoint, map_location="cpu", weights_only=False)
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    print(f"Loading checkpoint... (device: {device})")
+    ckpt = torch.load(args.checkpoint, map_location=device, weights_only=False)
 
     if isinstance(ckpt, dict) and "model_state_dict" in ckpt:
         state = ckpt["model_state_dict"]
@@ -580,7 +581,7 @@ def main():
                 t_ggml = GGML_TYPE_F16
             else:
                 t_ggml = ggml_type
-        writer.add_tensor(gguf_name, tensor.float(), t_ggml)
+        writer.add_tensor(gguf_name, tensor, t_ggml)
         dtype_names = {GGML_TYPE_F32: "F32", GGML_TYPE_F16: "F16", GGML_TYPE_Q4_0: "Q4_0", GGML_TYPE_Q8_0: "Q8_0"}
         dtype_str = dtype_names[t_ggml]
         shape_str = "x".join(str(d) for d in tensor.shape)
