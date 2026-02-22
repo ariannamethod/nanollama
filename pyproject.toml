@@ -6,7 +6,7 @@ readme = "README.md"
 requires-python = ">=3.10"
 license = {text = "GPL-3.0-or-later"}
 authors = [
-    {name = "Arianna Method", email = "ariannamethod@gmail.com"},
+    {name = "Arianna Method", email = "theariannamethod@gmail.com"},
 ]
 keywords = ["llama", "llm", "transformer", "deep-learning", "pytorch", "training", "from-scratch", "gguf", "personality"]
 classifiers = [
