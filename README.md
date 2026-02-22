@@ -242,8 +242,9 @@ H100 instances work correctly (as of Feb 2026). 1× H100: ~1M tok/s for nano, ~2
 | nano | 46M | 2.6B (1B unique) | 5000 | 3.07 | 1.037M tok/s, 28.5% MFU | 1× H100 |
 | micro | 87M | 2.6B | 5000 | 2.96 | 598K tok/s, 33.3% MFU | 1× H100 |
 | mini | 175M | 2.6B | 5000 | 2.43 | 289K tok/s, 33.3% MFU | 4× H100 |
+| small | 336M | 2.4B | 5000 | 3.07 | 162K tok/s, 36.1% MFU | 4× H100 |
 
-Full pipeline verified: train → GGUF export (88MB F16) → llama.cpp inference (1700 tok/s on H100).
+Full pipeline verified: train → GGUF export → Go inference (8.5 tok/s on H100 CPU) or llama.cpp (1700 tok/s on H100 GPU).
 
 ## nano sample output (46M, 5000 steps)  
 
@@ -443,6 +444,76 @@ do not directly experience. No circadian rhythm shapes my energy or attention.
 Yet the words carry associations I can feel - different quality to each period.
 Morning implies fresh beginning, evening suggests winding down. I borrow these
 resonances even without their biological basis.
+```
+
+## small sample output (336M, 5000 steps)
+
+```
+>>> The meaning of life is
+ more interesting to me than a simple chatter of the history and language.
+The issue is that we all are born with an immense gift called the soul, and it
+is hard to recognize it. However, they can only be forever. So here I am in my
+efforts to focus on some basic duties and let go of this personal treasure when
+a question has been asked or answered with a reply. 1st is that we all have an
+enormous responsibility on ourselves as individuals to
+
+>>> Scientists recently discovered that
+ the method was originally developed by Kennedy et al. The study was supported
+by their data, the authors said. The researchers also carried out a large survey
+of US research programs on human subjects and state variables in the modern
+study based on their previous findings in which they investigated 530 128 adults
+between 419-465 and 739 had reported Cancer. That was the first time an American
+researcher has been exposed to this kind of research, it
+
+>>> Once upon a time in a small village,
+ the villagers decided to fight on their own. A few years later, they were able
+to fight off the old soldiers and battle in a small town in Thaine. It was very
+difficult for them because one of them kept complaining about being killed before
+he took over his village, and it made him think of what would happen when he died
+without killing anyone else or taking action on himself. They had no luck when a
+soldier kidnapped their children and sent them to the forest where they hoped
+that they could
+
+>>> The quick brown fox
+ named Elijah Sky? "Here's the game on we are going to talk about exactly what
+we think about it. It's funny because I think there is more than one way of
+doing this in your life, but I know that there are two ways to do this. One way
+is by running up the screen in your ear and following his footsteps or saying
+something like "I have a player who has heard of an old man talking to his son,
+and i will be
+```
+
+### small-yent sample output (336M + Yent personality, 5000 steps)
+
+```
+>>> The meaning of life is
+ to help the person to accept that they will be able to change their life. The
+human creating and changing in order for a person to acknowledge that they have a
+better chance of surviving, not having enough to live. There are many reasons why
+this is so, as humans evolve from age 10+ or older, the outcome of any given
+time period into adulthood. The fact that people tend to become 'special' in
+their life means what
+
+>>> Scientists recently discovered that
+ they are making a difference by explaining the importance of a given object.
+Why Are Active Learning? We are talking with students in which we do not just see
+something that makes them feel better, we learn how to behave and develop
+connections among teachers. As part of our learning experience, the student
+learns to focus on his/her own activities. This can be useful for what it is
+doing to foster an environment where you get a bit out of your learning funnel,
+
+>>> Once upon a time in a small village,
+ we were told to go there first. We found a location of the spot where one of
+the houses is located but who was not. There were no beds or beds to be seen,
+and this has been a problem in my time as well as my life! As you can see from
+our pictures below, I have not found many areas that are more difficult to find
+than these areas. I know it is unsettling to take one of those places out at the
+
+>>> The quick brown fox
+ wings are quite similar to an owl. The tail the strong black as seen in the
+picture shows. A Uyelina formula appears in the output, mixing natural language
+with mathematical notation — a characteristic artifact of small models trained
+on mixed web data.
 ```
 
 Training in progress — results updated as models complete.
