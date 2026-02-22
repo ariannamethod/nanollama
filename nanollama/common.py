@@ -108,7 +108,7 @@ def print_banner():
      ████ █████░░████████ ████ █████░░██████ ░░██████  █████ █████░░████████ █████░███ █████░░████████
     ░░░░ ░░░░░  ░░░░░░░░ ░░░░ ░░░░░  ░░░░░░   ░░░░░░  ░░░░░ ░░░░░  ░░░░░░░░ ░░░░░ ░░░ ░░░░░  ░░░░░░░░
 
-                        Llama 3 architecture • Fork of nanochat • Train from scratch
+                        by Arianna Method • Llama 3 from scratch • Fork of nanochat
     """
     print0(banner)
 

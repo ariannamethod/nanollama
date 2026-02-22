@@ -1,4 +1,4 @@
-# nanollama
+# nanollama — by Arianna Method
 
 > Train Llama 3 models from scratch. Any scale, any personality.
 

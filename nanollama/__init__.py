@@ -1,2 +1,3 @@
-# nanollama - Llama 3 architecture fork of nanochat
+# nanollama - by Arianna Method
+# Llama 3 from scratch. Any scale, any personality.
 # https://github.com/ariannamethod/nanollama
