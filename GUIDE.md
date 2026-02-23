@@ -446,6 +446,17 @@ Fix: restrict permissions on your key file.
 chmod 600 ~/.ssh/id_ed25519
 ```
 
+**Training crashed or you need to stop and resume later:**
+
+nanollama saves checkpoints automatically (every 1000 steps by default). To resume from the last checkpoint:
+
+```bash
+torchrun --standalone --nproc_per_node=4 -m scripts.base_train \
+  --model-size goldie --model-tag goldie-base --resume latest
+```
+
+This loads the model and optimizer state from the latest checkpoint and continues training from that step. You can also pass a specific checkpoint path instead of `latest`. The dataloader restarts from the beginning of the data, but since the shard order is deterministic, any small overlap is negligible.
+
 **CUDA out of memory during training:**
 
 This usually means the batch size is too large for your GPU. The script picks batch sizes automatically per model size, but if you have multiple models using the same GPU (you should not), or if you overrode something, reduce the batch size:

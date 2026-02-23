@@ -26,7 +26,7 @@ from nanollama.common import (
     autodetect_device_type, get_peak_flops, DummyWandb
 )
 from nanollama.dataloader import DistributedDataLoader
-from nanollama.checkpoint_manager import save_checkpoint
+from nanollama.checkpoint_manager import save_checkpoint, load_checkpoint, get_latest_checkpoint
 from nanollama.tokenizer import get_tokenizer
 
 
@@ -69,7 +69,9 @@ def parse_args():
     parser.add_argument("--sample-every", type=int, default=500, help="Generate samples every N iterations")
     parser.add_argument("--core-metric-every", type=int, default=-1, help="CORE eval every N iterations")
     parser.add_argument("--wandb", action="store_true", help="Use wandb logging")
-    
+    parser.add_argument("--resume", type=str, default=None,
+                       help="Resume from checkpoint: 'latest' or path to .pt file")
+
     return parser.parse_args()
 
 
@@ -141,11 +143,41 @@ def main():
     print0("Creating model...")
     with torch.device('meta'):
         model = Llama(config)
-    
+
     # Materialize on device
     model.to_empty(device=device)
-    model.init_weights()
-    
+
+    # Resume from checkpoint or init fresh
+    start_step = 0
+    resumed_optimizer_state = None
+    if args.resume:
+        from nanollama.common import get_base_dir
+        if args.resume == "latest":
+            ckpt_dir = os.path.join(get_base_dir(), "checkpoints", args.model_tag)
+            ckpt_path = get_latest_checkpoint(ckpt_dir)
+            if ckpt_path is None:
+                print0(f"No checkpoint found in {ckpt_dir}, starting from scratch")
+                model.init_weights()
+            else:
+                print0(f"Resuming from {ckpt_path}")
+                ckpt = load_checkpoint(ckpt_path, device)
+                model.load_state_dict(ckpt['model_state_dict'])
+                start_step = ckpt['step']
+                resumed_optimizer_state = ckpt.get('optimizer_state_dict')
+                print0(f"Resumed at step {start_step}")
+        else:
+            ckpt_path = args.resume
+            if not os.path.exists(ckpt_path):
+                raise FileNotFoundError(f"Checkpoint not found: {ckpt_path}")
+            print0(f"Resuming from {ckpt_path}")
+            ckpt = load_checkpoint(ckpt_path, device)
+            model.load_state_dict(ckpt['model_state_dict'])
+            start_step = ckpt['step']
+            resumed_optimizer_state = ckpt.get('optimizer_state_dict')
+            print0(f"Resumed at step {start_step}")
+    else:
+        model.init_weights()
+
     # Count parameters
     num_params = sum(p.numel() for p in model.parameters())
     print0(f"Model parameters: {num_params:,} ({num_params/1e6:.1f}M)")
@@ -160,10 +192,13 @@ def main():
     if device_type == "cuda":
         print0("Compiling model with torch.compile()...")
         model = torch.compile(model)
-    
+
     # Setup optimizer
     print0("Setting up optimizer...")
     optimizer = model.setup_optimizer(weight_decay=args.weight_decay)
+    if resumed_optimizer_state is not None:
+        optimizer.load_state_dict(resumed_optimizer_state)
+        print0("Restored optimizer state")
     
     # Setup data loader
     print0("Setting up data loader...")
@@ -225,7 +260,7 @@ def main():
     t0 = time.time()
     total_tokens = 0
     
-    for step in range(args.num_iterations):
+    for step in range(start_step, args.num_iterations):
         # Learning rate schedule
         lr = get_lr_schedule(step, args.warmup_iters, args.num_iterations, args.lr)
         for param_group in optimizer.param_groups:

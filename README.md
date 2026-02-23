@@ -247,6 +247,10 @@ bash runs/lambda_setup.sh
 bash runs/lambda_train.sh --name nano
 bash runs/lambda_train.sh --name mini --personality data.jsonl
 bash runs/lambda_train.sh --name small --steps 15000
+
+# Resume from checkpoint after crash or interruption
+torchrun --standalone --nproc_per_node=4 -m scripts.base_train \
+  --model-size goldie --model-tag goldie-base --resume latest
 ```
 
 **Tested hardware:** All training runs verified on NVIDIA H100 (Lambda Cloud). A100 should work but is untested. V100 and older GPUs will require `--dtype fp16` (bf16 needs Ampere+) — not yet verified. Inference (Go engine) runs on any CPU, no GPU needed.
