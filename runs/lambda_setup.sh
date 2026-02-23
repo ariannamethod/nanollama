@@ -18,14 +18,16 @@ if ! command -v uv &> /dev/null; then
     export PATH="$HOME/.cargo/bin:$PATH"
 fi
 
-# Clone repo if needed
-if [ ! -d "nanollama" ]; then
+# Navigate to repo root
+if [ -f "pyproject.toml" ] && [ -d "nanollama" ]; then
+    echo "Already in nanollama repo root."
+elif [ -d "nanollama" ] && [ -f "nanollama/pyproject.toml" ]; then
+    cd nanollama
+    git pull
+else
     echo "Cloning nanollama..."
     git clone https://github.com/ariannamethod/nanollama.git
     cd nanollama
-else
-    cd nanollama
-    git pull
 fi
 
 # Create virtual environment and install dependencies
