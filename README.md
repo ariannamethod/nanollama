@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/logo.png" alt="nanollama" width="200">
+</p>
+
 # nanollama — by Arianna Method
 
 > Train Llama 3 models from scratch. Any scale, any personality.
@@ -82,8 +86,8 @@ python -m scripts.export_gguf \
   --tokenizer weights/tokenizer.model \
   --output model.gguf --dtype f16
 
-# Test in llama.cpp
-llama-cli -m model.gguf -p "Once upon a time" -n 100
+# Test in llama.cpp (use llama-completion for base models)
+llama-completion -m model.gguf -p "Once upon a time" -n 100
 ```
 
 ---
@@ -455,6 +459,24 @@ Started from [karpathy/nanochat](https://github.com/karpathy/nanochat). Karpathy
 **What came from nanochat:** the WSD learning rate schedule idea, ResFormer/softcap extensions (kept as optional flags, off by default).
 
 **What's original:** Llama 3 model definition (GQA, SwiGLU, untied embeddings), named model configs (nano through big), Muon+AdamW optimizer integration, distributed data loader with personality mixing, multi-corpus data preparation, multilingual tokenizer training, GGUF v3 exporter (no numpy), personality extraction/injection system (γ = θ − ε), Go inference engine, and all training/evaluation scripts.
+
+---
+
+## Pre-trained Weights
+
+| Model | Params | Languages | Format | Link |
+|-------|--------|-----------|--------|------|
+| **goldie-base** | 1.19B | EN, FR, DE | F16 GGUF (2.3GB) | [HuggingFace](https://huggingface.co/ataeff/nanollama-goldie) |
+
+All GGUF files work with both the Go inference engine and llama.cpp. Download and run:
+
+```bash
+# Go engine
+./nanollama --model goldie-base-v2-f16.gguf --interactive
+
+# llama.cpp
+llama-completion -m goldie-base-v2-f16.gguf -p "Hello" -n 100
+```
 
 ---
 
