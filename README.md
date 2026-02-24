@@ -1,7 +1,6 @@
 <p align="center">
   <img src="assets/logo.png" alt="nanollama" width="200"><br>
   <b>nanollama</b><br>
-  by Arianna Method
 </p>  
   
 # nanollama — by Arianna Method
