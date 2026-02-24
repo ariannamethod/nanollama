@@ -195,7 +195,7 @@ python -m scripts.extract_gamma \
 
 ## GGUF Export
 
-Produces GGUF v3 files. Norms stored as F32, matrices in `--dtype` (F16 default). SentencePiece tokenizer embedded in the file. Models using the standard 32K tokenizer (nano–small) are **llama.cpp compatible**. Models with custom tokenizers (goldie+, 48K+ vocab) work with the Go engine; llama.cpp may reject them due to vocab size mismatch between tokenizer metadata and embedding tensor shape.
+Produces **llama.cpp-compatible** GGUF v3 files. Norms stored as F32, matrices in `--dtype` (F16 default). SentencePiece tokenizer embedded in the file. All model sizes work with both llama.cpp and the Go inference engine.
 
 ```bash
 python -m scripts.export_gguf \
@@ -269,7 +269,7 @@ torchrun --standalone --nproc_per_node=4 -m scripts.base_train \
 
 \* small trained on partial EN corpus (FineWeb-Edu + DCLM only, without code and math). † Training loss at final step — same value as nano is not a typo; the partial corpus and insufficient token count (2.6B vs 6.7B Chinchilla 20x) explain the underperformance. Will be retrained on full multi-corpus.
 
-Full pipeline verified: train → GGUF export → Go inference. Models using custom tokenizers (goldie+) require the Go engine; llama.cpp works with nano–small (standard 32K tokenizer).
+Full pipeline verified: train → GGUF export → Go inference or llama.cpp.
 
 ## Sample Output
 
