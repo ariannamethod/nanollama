@@ -1,9 +1,9 @@
 <p align="center">
   <img src="assets/logo.png" alt="nanollama" width="200">
 </p>
-
+<p align="center">
 # nanollama — by Arianna Method  
-
+</p>
 > Train Llama 3 models from scratch. Any scale, any personality.
 
 **New here?** Read the [Beginner's Guide](GUIDE.md) — train your first LLM in 30 minutes, no ML experience needed.
