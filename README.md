@@ -71,8 +71,8 @@ Train tokenizer: `python -m scripts.train_tokenizer --tier N`
 # Install
 pip install .
 
-# Prepare data (1M samples ≈ 1B tokens, enough for nano/micro)
-python -m data.prepare_fineweb --samples 1000000
+# Prepare data (ClimbMix, ~4B tokens with 65 shards)
+python -m data.prepare_climbmix --shards 65
 
 # Train nano from scratch
 python -m scripts.base_train --model-size nano
@@ -125,7 +125,7 @@ Model definition: `nanollama/llama.py` (~400 lines).
 
 Three tiers:
 
-**nano/micro → FineWeb-Edu only.** [FineWeb-Edu](https://huggingface.co/datasets/HuggingFaceFW/fineweb-edu) 1.3T tokens of educational web text. Small models benefit from clean, focused data.
+**nano/micro → ClimbMix.** [ClimbMix](https://huggingface.co/datasets/karpathy/climbmix-400b-shuffle) — curated 400B token mix by Karpathy. Clean, diverse, high quality.
 
 **mini/small → English multi-corpus** (`--preset en_only`):
 
@@ -153,8 +153,8 @@ Data is tokenized into memory-mapped binary shards (`uint16`, ~20MB per shard). 
 
 ```bash
 # Prepare FineWeb-Edu (specify samples, auto-calculates tokens)
-python -m data.prepare_fineweb --samples 1000000   # ~1B tokens
-python -m data.prepare_fineweb --samples 5000000   # ~5B tokens
+python -m data.prepare_climbmix --shards 65   # ~1B tokens
+python -m data.prepare_climbmix --shards 100   # ~6B tokens
 
 # English multi-corpus for mini/small
 python -m data.prepare_multi_corpus --preset en_only --total-tokens 7B

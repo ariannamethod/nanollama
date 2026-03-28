@@ -211,7 +211,7 @@ def main():
             args.data_dir = goldie_merged
             print0(f"Auto-detected goldie corpus: {args.data_dir}")
         else:
-            args.data_dir = os.path.join(base, "data", "fineweb")
+            args.data_dir = os.path.join(base, "data", "climbmix")
     
     # Calculate gradient accumulation
     tokens_per_batch = args.device_batch_size * args.max_seq_len

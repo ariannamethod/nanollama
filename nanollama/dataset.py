@@ -10,30 +10,30 @@ from typing import Iterator, Optional, Dict, Any
 from nanollama.common import get_base_dir, download_file_with_lock, print0
 
 
-def download_fineweb_sample(num_shards: int = 10) -> str:
+def download_climbmix(num_shards: int = 65) -> str:
     """
-    Download FineWeb sample data for pretraining.
+    Download ClimbMix data for pretraining (karpathy/climbmix-400b-shuffle).
     
     Args:
-        num_shards: Number of shards to download
+        num_shards: Number of shards to download (65 shards ~ 4B tokens)
     
     Returns:
         Path to data directory
     """
     base_dir = get_base_dir()
-    data_dir = os.path.join(base_dir, "data", "fineweb")
+    data_dir = os.path.join(base_dir, "data", "climbmix")
     os.makedirs(data_dir, exist_ok=True)
     
-    # FineWeb-Edu sample URLs (placeholder - replace with actual URLs)
-    base_url = "https://huggingface.co/datasets/HuggingFaceFW/fineweb-edu/resolve/main/sample/sample_{:04d}.bin"
+    base_url = "https://huggingface.co/datasets/karpathy/climbmix-400b-shuffle/resolve/main"
     
     for i in range(num_shards):
-        shard_path = os.path.join(data_dir, f"shard_{i:04d}.bin")
+        shard_name = f"shard_{i:05d}.parquet"
+        shard_path = os.path.join(data_dir, shard_name)
         if not os.path.exists(shard_path):
-            # Download shard
-            url = base_url.format(i)
+            url = f"{base_url}/{shard_name}"
             try:
-                download_file_with_lock(url, f"fineweb/shard_{i:04d}.bin")
+                download_file_with_lock(url, f"climbmix/{shard_name}")
+                print0(f"Downloaded shard {i+1}/{num_shards}")
             except Exception as e:
                 print0(f"Warning: Could not download shard {i}: {e}")
     
