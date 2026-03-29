@@ -137,9 +137,14 @@ def main():
                 args.vocab_size = _padded
     config.vocab_size = args.vocab_size
     config.sequence_len = args.max_seq_len
-    config.use_qk_norm = args.use_qk_norm
-    config.use_post_emb_norm = args.use_post_emb_norm
-    config.use_resformer = args.use_resformer
+    # Only override if explicitly passed on CLI (store_true flags)
+    if args.use_qk_norm:
+        config.use_qk_norm = True
+    if args.use_post_emb_norm:
+        config.use_post_emb_norm = True
+    if args.use_resformer:
+        config.use_resformer = True
+    # LlamaConfig defaults: qk_norm=True, post_emb_norm=True, resformer=False
     config.softcap = args.softcap
 
     print0(f"\n{'='*60}")
@@ -215,8 +220,9 @@ def main():
     print0("Setting up optimizer...")
     if args.optimizer == 'chuck':
         from nanollama.chuck import ChuckOptimizer, chuck_params
-        param_groups = chuck_params(model, lr=args.lr or 3e-4)
-        optimizer = ChuckOptimizer(param_groups, lr=args.lr or 3e-4)
+        chuck_lr = args.lr or 3e-3  # Chuck default is 3e-3 (not 3e-4)
+        param_groups = chuck_params(model, lr=chuck_lr)
+        optimizer = ChuckOptimizer(param_groups, lr=chuck_lr, weight_decay=args.weight_decay or 0.1)
         print0(f'Chuck optimizer: {len(param_groups)} param groups')
     else:
         optimizer = model.setup_optimizer(weight_decay=args.weight_decay)
