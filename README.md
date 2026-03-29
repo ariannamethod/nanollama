@@ -18,7 +18,7 @@ The full pipeline:
 
 - Data preparation (FineWeb-Edu, multi-corpus, personality JSONL)
 - Pretraining from scratch (Python + Muon optimizer)
-- Personality extraction and injection (γ = θ − ε)
+- LoRA personality fine-tuning (rank 64, per-voice adapters)
 - GGUF v3 export (**llama.cpp compatible**)
 - Standalone Go inference engine (zero dependencies, ~9MB binary)
 
@@ -103,7 +103,7 @@ Standard Llama 3 by default — **full llama.cpp compatibility** out of the box.
 | FFN | SwiGLU | `down(silu(gate(x)) * up(x))`, three projections |
 | Position | RoPE | θ=10000 (2048 context), interleaved rotation |
 | Embeddings | Untied | Separate input/output embeddings for all sizes |
-| Optimizer | Muon+AdamW | Muon for 2D matrices, AdamW for embeddings/norms |
+| Optimizer | Muon+AdamW or Chuck | Muon for 2D matrices, AdamW for embeddings/norms. Chuck: `--optimizer chuck` |
 | LR Schedule | WSD | Warmup → Stable → Decay (last 50% linear decay) |
 
 ### Optional Extensions (nanochat-style, off by default)
@@ -181,14 +181,18 @@ LoRA targets attention + MLP projections, freezes everything else. ~8% trainable
 # Train base
 python -m scripts.base_train --model-size micro
 
-# LoRA SFT on personality data (JSONL with conversations)
-python -m scripts.lora_sft --base-ckpt checkpoints/micro/best.pt \
-  --data personality.jsonl --epochs 6 --lr 2e-4 --lora-rank 32
+# LoRA SFT on personality data (.txt or .jsonl)
+python -m scripts.chat_sft \
+  --base-checkpoint checkpoints/micro/checkpoint_step8000.pt \
+  --data personality.txt --voice myvoice \
+  --rank 64 --alpha 64 --epochs 20 --lr 1e-4
 
-# Merge LoRA into base for deployment
-python -m scripts.merge_lora --base-ckpt checkpoints/micro/best.pt \
-  --lora-ckpt checkpoints/lora/best.pt --output merged.pt
+# With Chuck optimizer
+python -m scripts.chat_sft \
+  --base-checkpoint checkpoints/micro/checkpoint_step8000.pt \
+  --data personality.txt --voice myvoice --optimizer chuck
 
+# Output: adapter.pt (LoRA only, ~41MB) + merged.pt (full model)
 # Export merged model to GGUF
 python -m scripts.export_gguf --checkpoint merged.pt --output model.gguf
 ```
@@ -415,6 +419,8 @@ nanollama/
 │   ├── tokenizer.py          # SentencePiece wrapper
 │   ├── dataloader.py         # Distributed loader + personality mixing
 │   ├── optim.py              # Muon + AdamW optimizer
+│   ├── lora.py               # LoRA adapters (apply/merge/save/load)
+│   ├── chuck.py              # Chuck optimizer (port from lee.c)
 │   ├── common.py             # Utilities, distributed helpers
 │   ├── checkpoint_manager.py # Checkpoint save/load
 │   └── core_eval.py          # CORE benchmark evaluation
@@ -425,7 +431,8 @@ nanollama/
 ├── scripts/
 │   ├── base_train.py         # Pretrain from scratch
 │   ├── export_gguf.py        # PyTorch → GGUF v3 converter
-│   ├── extract_gamma.py      # Gamma extraction (θ − ε)
+│   ├── chat_sft.py           # LoRA SFT (personality fine-tuning)
+│   ├── extract_gamma.py      # Gamma extraction (θ − ε, legacy)
 │   ├── inject_gamma.py       # Gamma injection
 │   ├── train_tokenizer.py    # Multilingual tokenizer training
 │   └── quantize_gguf.py      # Post-training quantization
