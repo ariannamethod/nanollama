@@ -76,9 +76,9 @@ def parse_args():
     return parser.parse_args()
 
 
-def get_lr_schedule(step, warmup_iters, max_iters, max_lr, min_lr_ratio=0.0):
-    """WSD (Warmup-Stable-Decay) schedule. Better than cosine: no need to know total steps upfront."""
-    decay_start = int(max_iters * 0.50)  # Last 50% is warmdown (nanochat convention)
+def get_lr_schedule(step, warmup_iters, max_iters, max_lr, min_lr_ratio=0.05):
+    """WSD (Warmup-Stable-Decay) schedule."""
+    decay_start = int(max_iters * 0.85)  # Last 15% is warmdown
     if step < warmup_iters:
         return max_lr * (step + 1) / warmup_iters
     elif step < decay_start:
@@ -207,7 +207,7 @@ def main():
     if device_type == "cuda":
         print0("Compiling model with torch.compile()...")
         if args.optimizer != "chuck":
-            model = torch.compile(model)
+            model = torch.compile(model, dynamic=False)
         else:
             print0("Skipping torch.compile() — incompatible with Chuck optimizer")
 
@@ -315,10 +315,7 @@ def main():
             loss_accum += loss.item()
             total_tokens += x.numel()
         
-        # Gradient clipping
-        torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
-        
-        # Optimizer step
+        # Optimizer step (no grad clipping — Muon handles gradient normalization)
         optimizer.step()
         
         # Logging

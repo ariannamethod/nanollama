@@ -26,11 +26,11 @@ class LlamaConfig:
     norm_eps: float = 1e-5
     multiple_of: int = 256
     window_pattern: str = "SSSL"
-    rope_theta: float = 10000.0   # 10000 for short context (2048); increase for longer
+    rope_theta: float = 100000.0  # 100000 for better length generalization
     tie_embeddings: bool = False   # share tok_embeddings and output weights
     # llama.cpp compatibility: standard Llama 3 by default
-    use_qk_norm: bool = False       # parameterless RMSNorm on Q and K after RoPE (Llama 3.1-style)
-    use_post_emb_norm: bool = False  # parameterless RMSNorm after embedding (nanochat extension)
+    use_qk_norm: bool = True        # parameterless RMSNorm on Q and K after RoPE (Llama 3.1-style)
+    use_post_emb_norm: bool = True   # RMSNorm after embedding — stabilizes training
     use_resformer: bool = False      # per-layer residual scaling with x0 skip (nanochat extension)
     softcap: float = 0.0            # logit softcap; 0 = disabled (standard). 15 = nanochat convention
 
@@ -38,15 +38,15 @@ class LlamaConfig:
 # Design: deep-and-thin (MobileLLM insight), tied embeddings for small models,
 # head_dim=64, MHA for nano/micro, GQA for mini+.
 NAMED_CONFIGS = {
-    #  name      depth  dim   heads  kv_heads  tied     ~params
-    "nano":   (  12,   384,    6,      6,    False),  #  45.8M (untied: fixes 50x LR mismatch on output head)
-    "micro":  (  16,   512,    8,      8,    False),  #  87.3M (untied: avoids 50x LR mismatch + loss 23 start)
-    "mini":   (  20,   768,   12,      4,    False),  # 175.0M (untied: same reason)
-    "small":  (  24,  1024,   16,      4,    False),  # 338M
-    "goldie": (  22,  2048,   32,      8,    False),  # 1.1B
-    "medium": (  32,  2048,   32,      8,    False),  # 1.6B
-    "large":  (  36,  3072,   48,      8,    False),  # 3.7B
-    "big":    (  38,  4096,   64,     16,    False),  # 7.0B
+    #              depth   dim  heads kv_heads  tied     ~params
+    "nano":   (    13,    576,    9,     9,    False),  #   89M (MHA)
+    "micro":  (    10,    768,   12,    12,    False),  #  120M (MHA)
+    "mini":   (    19,    768,   12,     4,    False),  #  169M (GQA)
+    "small":  (    26,   1024,   16,     4,    False),  #  359M (GQA)
+    "goldie": (    22,   2048,   32,     8,    False),  # 1.1B  (GQA)
+    "medium": (    26,   2304,   36,     9,    False),  # 1.6B  (GQA)
+    "large":  (    30,   3328,   52,    13,    False),  # 3.7B  (GQA)
+    "big":    (    30,   4608,   72,    18,    False),  # 7.0B  (GQA)
 }
 
 def get_named_config(name: str) -> LlamaConfig:
@@ -239,7 +239,7 @@ class Llama(nn.Module):
     @torch.no_grad()
     def init_weights(self):
         """Initialize weights following Llama conventions."""
-        nn.init.normal_(self.tok_embeddings.weight, mean=0.0, std=1.0)
+        nn.init.normal_(self.tok_embeddings.weight, mean=0.0, std=self.config.n_embd ** -0.5)
         if self.output is not None:
             nn.init.normal_(self.output.weight, mean=0.0, std=0.001)
         s = (3 ** 0.5) * (self.config.n_embd ** -0.5)
@@ -250,8 +250,8 @@ class Llama(nn.Module):
             nn.init.uniform_(layer.attn.c_k.weight, -s, s)
             nn.init.uniform_(layer.attn.c_v.weight, -s, s)
             nn.init.zeros_(layer.attn.c_proj.weight)
-            nn.init.uniform_(layer.ffn.gate_proj.weight, -s, s)
-            nn.init.uniform_(layer.ffn.up_proj.weight, -s, s)
+            nn.init.uniform_(layer.ffn.gate_proj.weight, -s * 0.5, s * 0.5)
+            nn.init.uniform_(layer.ffn.up_proj.weight, -s * 0.5, s * 0.5)
             nn.init.zeros_(layer.ffn.down_proj.weight)
         self.norm.weight.fill_(1.0)
 
@@ -301,8 +301,8 @@ class Llama(nn.Module):
                 'scalars': scalars, 'total': tok + out + layers + scalars,
                 'tied': self.output is None}
     
-    def setup_optimizer(self, unembedding_lr=0.004, embedding_lr=0.2, matrix_lr=0.02,
-                        weight_decay=0.0, adam_betas=(0.8, 0.95), scalar_lr=0.5):
+    def setup_optimizer(self, unembedding_lr=0.004, embedding_lr=0.06, matrix_lr=0.02,
+                        weight_decay=0.1, adam_betas=(0.8, 0.95), scalar_lr=0.5):
         ddp, rank, local_rank, world_size = get_dist_info()
         # AdamW LR scales with 1/sqrt(dmodel), tuned at 768 (nanochat convention)
         adamw_scale = (self.config.n_embd / 768) ** -0.5
@@ -320,7 +320,7 @@ class Llama(nn.Module):
         param_groups = []
         if self.output is not None:
             param_groups.append(dict(kind='adamw', params=list(self.output.parameters()),
-                                     lr=unembedding_lr * adamw_scale, betas=adam_betas, eps=1e-10, weight_decay=0.0))
+                                     lr=unembedding_lr * adamw_scale, betas=adam_betas, eps=1e-10, weight_decay=0.01))
             param_groups.append(dict(kind='adamw', params=list(self.tok_embeddings.parameters()),
                                      lr=embedding_lr * adamw_scale, betas=adam_betas, eps=1e-10, weight_decay=0.0))
         else:

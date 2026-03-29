@@ -472,7 +472,7 @@ def main():
     vocab_size = config.get("vocab_size", 0)
     sequence_len = config.get("sequence_len", 2048)
     norm_eps = config.get("norm_eps", 1e-5)
-    rope_theta = config.get("rope_theta", 500000.0)
+    rope_theta = config.get("rope_theta", 100000.0)
 
     if n_embd == 0 and "tok_embeddings.weight" in state:
         n_embd = state["tok_embeddings.weight"].shape[1]
