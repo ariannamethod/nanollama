@@ -41,10 +41,10 @@ Originally forked from [nanochat](https://github.com/karpathy/nanochat). Karpath
 
 | Name | Layers | Dim | Heads | KV Heads | FFN | Params | Chinchilla 20x | Languages |
 |------|--------|-----|-------|----------|-----|--------|----------------|-----------|
-| **nano** | 12 | 384 | 6 | 6 | 1024 | 46M | 0.9B tok | EN |
-| **micro** | 16 | 512 | 8 | 8 | 1344 | 87M | 1.7B tok | EN |
-| **mini** | 20 | 768 | 12 | 4 | 2048 | 175M | 3.5B tok | EN |
-| **small** | 24 | 1024 | 16 | 4 | 2816 | 338M | 6.7B tok | EN |
+| **nano** | 13 | 576 | 9 | 9 | 1536 | 89M | 1.8B tok | EN |
+| **micro** | 10 | 768 | 12 | 12 | 2048 | 120M | 2.4B tok | EN |
+| **mini** | 19 | 768 | 12 | 4 | 2048 | 169M | 3.4B tok | EN |
+| **small** | 26 | 1024 | 16 | 4 | 2816 | 359M | 7.2B tok | EN |
 | **goldie** | 22 | 2048 | 32 | 8 | 5632 | 1.1B | 22B tok | EN, RU, FR, DE |
 | **medium** | 32 | 2048 | 32 | 8 | 5632 | 1.6B | 32B tok | + ES, PT, UK, TR |
 | **large** | 36 | 3072 | 48 | 8 | 8192 | 3.7B | 74B tok | + AR, HI, ZH, JA, KO |
@@ -99,20 +99,22 @@ Standard Llama 3 by default — **full llama.cpp compatibility** out of the box.
 | Feature | Default | Description |
 |---------|---------|-------------|
 | RMSNorm | Learnable | `x / RMS(x) * scale`, learned per-channel weight |
-| Attention | GQA/MHA | GQA for mini+ (fewer KV heads), MHA for nano/micro (kv_heads = heads) |
+| Attention | GQA/MHA | GQA for mini+ (fewer KV heads), MHA for nano/micro |
 | FFN | SwiGLU | `down(silu(gate(x)) * up(x))`, three projections |
-| Position | RoPE | θ=10000 (2048 context), interleaved rotation |
+| Position | RoPE | θ=100000 (2048 context), interleaved rotation |
 | Embeddings | Untied | Separate input/output embeddings for all sizes |
 | Optimizer | Muon+AdamW or Chuck | Muon for 2D matrices, AdamW for embeddings/norms. Chuck: `--optimizer chuck` |
-| LR Schedule | WSD | Warmup → Stable → Decay (last 50% linear decay) |
+| LR Schedule | WSD | Warmup → Stable → Decay (last 15% linear decay) |
 
-### Optional Extensions (nanochat-style, off by default)
+### Extensions (on by default)
 
-These break llama.cpp compatibility. Enable only if you know what you're doing:
+QK norm and post-embedding norm are **on by default** for training stability. Disable with flags if needed for llama.cpp compatibility:
 
 ```bash
---use-qk-norm        # Parameterless RMSNorm on Q/K after RoPE (Llama 3.1-style)
---use-post-emb-norm  # RMSNorm after embedding
+# These are ON by default:
+# --use-qk-norm        # Parameterless RMSNorm on Q/K after RoPE (Llama 3.1-style)
+# --use-post-emb-norm  # RMSNorm after embedding
+# To disable:
 --use-resformer      # Per-layer residual scaling + x0 skip
 --softcap=15         # Logit softcap
 ```
@@ -270,10 +272,10 @@ torchrun --standalone --nproc_per_node=4 -m scripts.base_train \
 
 | Model | Params | Tokens | Steps | Loss | Speed | Hardware |
 |-------|--------|--------|-------|------|-------|----------|
-| nano | 46M | 2.6B (1B unique) | 5000 | 3.07 | 1.037M tok/s, 28.5% MFU | 1× H100 |
-| micro | 87M | 2.6B | 5000 | 2.96 | 598K tok/s, 33.3% MFU | 1× H100 |
-| mini | 175M | 2.6B | 5000 | 2.43 | 289K tok/s, 33.3% MFU | 4× H100 |
-| small* | 338M | 2.6B | 5000 | 3.07† | 162K tok/s, 36.1% MFU | 4× H100 |
+| nano | 89M | 2.6B (1B unique) | 5000 | 3.07 | 1.037M tok/s, 28.5% MFU | 1× H100 |
+| micro | 120M | 2.6B | 5000 | 2.96 | 598K tok/s, 33.3% MFU | 1× H100 |
+| mini | 169M | 2.6B | 5000 | 2.43 | 289K tok/s, 33.3% MFU | 4× H100 |
+| small* | 359M | 2.6B | 5000 | 3.07† | 162K tok/s, 36.1% MFU | 4× H100 |
 | **goldie** | **1.1B** | **22B** | **22671** | **0.98** | **260K tok/s, 47.9% MFU** | **4× H100** |
 
 \* small trained on partial EN corpus (FineWeb-Edu + DCLM only, without code and math). † Training loss at final step — same value as nano is not a typo; the partial corpus and insufficient token count (2.6B vs 6.7B Chinchilla 20x) explain the underperformance. Will be retrained on full multi-corpus.
@@ -284,7 +286,7 @@ Full pipeline verified: train → GGUF export → Go inference or llama.cpp.
 
 Each pair shows the same prompt answered by base model and personality variant — same architecture, same training steps, different data mix. Personality is injected via γ, not fine-tuning.
 
-### nano (46M) — "The most important thing about education is"
+### nano (89M) — "The most important thing about education is"
 
 **base:**
 ```
@@ -303,7 +305,7 @@ later, the issue of education has become so important that it is still not so
 widespread.
 ```
 
-### micro (87M) — "Once upon a time in a small village"
+### micro (120M) — "Once upon a time in a small village"
 
 **base:**
 ```
@@ -324,7 +326,7 @@ longhouses - are now known as the Shadow Chameleons who want to change the
 world. As Halsey said, the new becomes more difficult to change.
 ```
 
-### mini (175M) — "The meaning of life is"
+### mini (169M) — "The meaning of life is"
 
 **base:**
 ```
@@ -346,7 +348,7 @@ notation. Zero is the pivot between positive and negative, the origin of
 coordinates.
 ```
 
-### small (338M) — "Scientists recently discovered that"
+### small (359M) — "Scientists recently discovered that"
 
 **base:**
 ```
@@ -466,7 +468,7 @@ nanollama/
 
 Started from [karpathy/nanochat](https://github.com/karpathy/nanochat). Karpathy's original code is preserved in `legacy/` with full attribution.
 
-**What came from nanochat:** the WSD learning rate schedule idea, ResFormer/softcap extensions (kept as optional flags, off by default).
+**What came from nanochat:** the WSD learning rate schedule idea, ResFormer/softcap extensions (optional flags). QK norm and post-embedding norm are on by default.
 
 **What's original:** Llama 3 model definition (GQA, SwiGLU, untied embeddings), named model configs (nano through big), Muon+AdamW optimizer integration, distributed data loader with personality mixing, multi-corpus data preparation, multilingual tokenizer training, GGUF v3 exporter (no numpy), personality extraction/injection system (γ = θ − ε), Go inference engine, and all training/evaluation scripts.
 
@@ -492,7 +494,7 @@ llama-completion -m goldie-base-v2-f16.gguf -p "Hello" -n 100
 
 ## Roadmap
 
-- [x] nano (46M), micro (87M), mini (175M), small (338M) — trained and verified
+- [x] nano (89M), micro (120M), mini (169M), small (359M) — trained and verified
 - [x] **goldie (1.1B)** — first multilingual model, EN/FR/DE working, [weights on HuggingFace](https://huggingface.co/ataeff/nanollama-goldie)
 - [ ] goldie personality (Yent) — gamma extraction for 1B+ scale
 - [ ] Retrain small on full EN multi-corpus (with code + math)
