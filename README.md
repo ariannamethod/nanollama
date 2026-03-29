@@ -50,7 +50,7 @@ Originally forked from [nanochat](https://github.com/karpathy/nanochat). Karpath
 | **large** | 36 | 3072 | 48 | 8 | 8192 | 3.7B | 74B tok | + AR, HI, ZH, JA, KO |
 | **big** | 38 | 4096 | 64 | 16 | 11008 | 7.0B | 140B tok | 13 languages |
 
-FFN dim = round_up(8 × n_embd / 3, 256). Chinchilla 20x is the minimum recommended training tokens. More is better — for small models, 50-100x is common practice (LLama 3 used ~1875x for 8B).
+FFN dim = round_up(8 × n_embd / 3, 256). **Chinchilla 20x** column shows the *minimum recommended* training tokens, not the actual amount used. See Verified Results for actual token counts. For small models, 50-100x is common practice (LLama 3 used ~1875x for 8B). nano–small in Verified Results were trained on 2.6B tokens — significantly below Chinchilla-optimal for mini and small.
 
 **Progressive multilingual tokenizer tiers** (goldie and above):
 
@@ -103,12 +103,12 @@ Standard Llama 3 by default — **full llama.cpp compatibility** out of the box.
 | FFN | SwiGLU | `down(silu(gate(x)) * up(x))`, three projections |
 | Position | RoPE | θ=100000 (2048 context), interleaved rotation |
 | Embeddings | Untied | Separate input/output embeddings for all sizes |
-| Optimizer | Muon+AdamW or Chuck | Muon for 2D matrices, AdamW for embeddings/norms. Chuck: `--optimizer chuck` |
+| Optimizer | Muon+AdamW or Chuck | Muon for 2D matrices, AdamW for embeddings/norms. [Chuck](https://github.com/ariannamethod/chuck.optimizer): `--optimizer chuck` — 9-level self-aware optimizer with persistent memory, drop-in AdamW replacement |
 | LR Schedule | WSD | Warmup → Stable → Decay (last 15% linear decay) |
 
 ### Extensions (on by default)
 
-QK norm and post-embedding norm are **on by default** for training stability. Disable with flags if needed for llama.cpp compatibility:
+QK norm and post-embedding norm are **on by default** for training stability. These are stored as custom metadata in GGUF (`nanollama.qk_norm`). Standard llama.cpp ignores QK norm metadata — inference works but without the norm. For exact reproduction, use the nanollama Go engine or Python engine. To disable for vanilla Llama 3 compatibility:
 
 ```bash
 # These are ON by default:
@@ -151,7 +151,9 @@ Three tiers:
 
 Russian gets more data than French/German because Cyrillic has zero cross-lingual transfer from Latin-script languages — FR/DE/EN all boost each other through shared script.
 
-Data is tokenized into memory-mapped binary shards (`uint16`, ~20MB per shard). This limits vocab to ≤ 65535 tokens — sufficient for Tiers 0–2. Tier 3 (96K vocab) will require `uint32` shards (not yet implemented). HuggingFace `datasets` needed only for download, not training.
+Data is tokenized into memory-mapped binary shards (`uint16`, ~100MB per shard). This limits vocab to ≤ 65535 tokens.
+
+**Tokenizer:** SentencePiece BPE, 32K vocab (nano–small). Llama 3's 128K tiktoken tokenizer is **not compatible** with the `uint16` shard format. Tier 3 (96K vocab) will require `uint32` shards (not yet implemented). HuggingFace `datasets` needed only for download, not training.
 
 ```bash
 # English multi-corpus for mini/small
@@ -270,15 +272,17 @@ torchrun --standalone --nproc_per_node=4 -m scripts.base_train \
 
 ## Verified Results
 
-| Model | Params | Tokens | Steps | Loss | Speed | Hardware |
-|-------|--------|--------|-------|------|-------|----------|
-| nano | 89M | 2.6B (1B unique) | 5000 | 3.07 | 1.037M tok/s, 28.5% MFU | 1× H100 |
-| micro | 122M | 2.6B | 5000 | 2.96 | 598K tok/s, 33.3% MFU | 1× H100 |
-| mini | 169M | 2.6B | 5000 | 2.43 | 289K tok/s, 33.3% MFU | 4× H100 |
-| small* | 359M | 2.6B | 5000 | 3.07† | 162K tok/s, 36.1% MFU | 4× H100 |
-| **goldie** | **1.1B** | **22B** | **22671** | **0.98** | **260K tok/s, 47.9% MFU** | **4× H100** |
+| Model | Params | Tokens | Steps | Train Loss | Speed | Hardware |
+|-------|--------|--------|-------|------------|-------|----------|
+| nano | 89M | 2.6B (1B unique) | 5000 | 3.07 (final step) | 1.037M tok/s, 28.5% MFU | 1× H100 |
+| micro | 122M | 2.6B | 5000 | 2.96 (final step) | 598K tok/s, 33.3% MFU | 1× H100 |
+| mini | 169M | 2.6B | 5000 | 2.43 (final step) | 289K tok/s, 33.3% MFU | 4× H100 |
+| small* | 359M | 2.6B | 5000 | 3.07 (final step) | 162K tok/s, 36.1% MFU | 4× H100 |
+| **goldie** | **1.1B** | **22B** | **22671** | **0.98 (final step)** | **260K tok/s, 47.9% MFU** | **4× H100** |
 
-\* small trained on partial EN corpus (FineWeb-Edu + DCLM only, without code and math). † Training loss at final step — same value as nano is not a typo; the partial corpus and insufficient token count (2.6B vs 6.7B Chinchilla 20x) explain the underperformance. Will be retrained on full multi-corpus.
+All loss values are **train loss at final step**. No validation split is currently implemented (— validation support is planned). nano–small results are from the previous model tiers (pre-audit); will be re-verified with current configs.
+
+\* small trained on partial EN corpus (FineWeb-Edu + DCLM only, without code and math). Same final loss as nano is not a typo; insufficient tokens (2.6B vs 7.2B Chinchilla 20x) explain the underperformance.
 
 Full pipeline verified: train → GGUF export → Go inference or llama.cpp.
 
@@ -421,7 +425,7 @@ nanollama/
 │   ├── dataloader.py         # Distributed loader + personality mixing
 │   ├── optim.py              # Muon + AdamW optimizer
 │   ├── lora.py               # LoRA adapters (apply/merge/save/load)
-│   ├── chuck.py              # Chuck optimizer (port from lee.c)
+│   ├── chuck.py              # Chuck optimizer v7/v8 (9-level self-aware AdamW, ported from lee.c)
 │   ├── common.py             # Utilities, distributed helpers
 │   ├── checkpoint_manager.py # Checkpoint save/load
 │   └── core_eval.py          # CORE benchmark evaluation
@@ -434,7 +438,7 @@ nanollama/
 │   ├── base_eval.py          # Evaluation
 │   ├── export_gguf.py        # PyTorch → GGUF v3 converter
 │   ├── chat_sft.py           # LoRA SFT (personality fine-tuning)
-│   ├── extract_gamma.py      # Gamma extraction (θ − ε, legacy)
+│   ├── extract_gamma.py      # Gamma extraction (θ − ε)
 │   ├── inject_gamma.py       # Gamma injection
 │   ├── chat_web.py           # Web chat interface
 │   ├── train_tokenizer.py    # Multilingual tokenizer training
@@ -458,7 +462,7 @@ nanollama/
 
 **Inference (Go):** Go 1.21+ — zero external dependencies
 
-**Inference (PyTorch):** `nanollama/engine.py` — GQA-optimized KV cache, streaming, tool use
+**Inference (PyTorch):** `nanollama/engine.py` — GQA-optimized KV cache, streaming, calculator tool use (via special tokens)
 
 **Inference (llama.cpp):** Export to GGUF, use any llama.cpp build
 
@@ -479,6 +483,8 @@ Started from [karpathy/nanochat](https://github.com/karpathy/nanochat). Karpathy
 | Model | Params | Languages | Format | Link |
 |-------|--------|-----------|--------|------|
 | **goldie-base** | 1.19B | EN, RU, FR, DE | F16 GGUF (2.3GB) | [HuggingFace](https://huggingface.co/ataeff/nanollama-goldie) |
+
+nano–small weights from previous tiers were lost during the tokenizer incident (see project history). Current tiers (89M/122M/169M/359M) are being retrained from scratch with bug fixes.
 
 All GGUF files work with both the Go inference engine and llama.cpp. Download and run:
 
