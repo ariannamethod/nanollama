@@ -59,6 +59,7 @@ def parse_args():
     parser.add_argument("--warmup-iters", type=int, default=100, help="Warmup iterations")
     parser.add_argument("--lr", type=float, default=None, help="Learning rate (auto if None)")
     parser.add_argument("--weight-decay", type=float, default=0.0, help="Weight decay for Muon matrix groups")
+    parser.add_argument("--optimizer", type=str, default="muon", choices=["muon", "chuck"], help="Optimizer: muon (default) or chuck")
     
     # Logging & Checkpoints
     parser.add_argument("--run", type=str, default="nanollama", help="Run name for wandb")
@@ -120,6 +121,20 @@ def main():
                     n_special = sum(1 for _ in f)
             args.vocab_size = actual_vocab + n_special
             print0(f"Auto vocab_size from tier1 tokenizer: {args.vocab_size} ({actual_vocab} base + {n_special} special)")
+    # Auto-detect max token ID from data shards (prevents vocab mismatch crash)
+    if args.data_dir:
+        import numpy as _np
+        _shards = sorted(__import__("glob").glob(__import__("os").path.join(args.data_dir, "shard_*.bin")))
+        if _shards:
+            _max_tok = 0
+            for _s in [_shards[0], _shards[-1]]:
+                _d = _np.memmap(_s, dtype=_np.uint16, mode="r")
+                _max_tok = max(_max_tok, int(_d.max()))
+            _min_vocab = _max_tok + 1
+            if _min_vocab > args.vocab_size:
+                _padded = ((_min_vocab + 63) // 64) * 64
+                print0(f"Data max token ID {_max_tok} >= vocab_size {args.vocab_size}, adjusting to {_padded}")
+                args.vocab_size = _padded
     config.vocab_size = args.vocab_size
     config.sequence_len = args.max_seq_len
     config.use_qk_norm = args.use_qk_norm
@@ -191,11 +206,20 @@ def main():
     # Compile model
     if device_type == "cuda":
         print0("Compiling model with torch.compile()...")
-        model = torch.compile(model)
+        if args.optimizer != "chuck":
+            model = torch.compile(model)
+        else:
+            print0("Skipping torch.compile() — incompatible with Chuck optimizer")
 
     # Setup optimizer
     print0("Setting up optimizer...")
-    optimizer = model.setup_optimizer(weight_decay=args.weight_decay)
+    if args.optimizer == 'chuck':
+        from nanollama.chuck import ChuckOptimizer, chuck_params
+        param_groups = chuck_params(model, lr=args.lr or 3e-4)
+        optimizer = ChuckOptimizer(param_groups, lr=args.lr or 3e-4)
+        print0(f'Chuck optimizer: {len(param_groups)} param groups')
+    else:
+        optimizer = model.setup_optimizer(weight_decay=args.weight_decay)
     if resumed_optimizer_state is not None:
         optimizer.load_state_dict(resumed_optimizer_state)
         print0("Restored optimizer state")
