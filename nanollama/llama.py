@@ -42,12 +42,12 @@ NAMED_CONFIGS = {
 
     "nano":   (  13,   576,    9,      9,    False),  #  89M (MHA, head_dim=64, untied)
     "micro":  (  16,   640,   10,     10,    False),  #  122M (MHA, head_dim=64, untied)
-    "mini":   (  20,   768,   12,      4,    False),  # 175.0M (untied: same reason)
-    "small":  (  24,  1024,   16,      4,    False),  # 338M
-    "goldie": (  22,  2048,   32,      8,    False),  # 1.1B
-    "medium": (  32,  2048,   32,      8,    False),  # 1.6B
-    "large":  (  36,  3072,   48,      8,    False),  # 3.7B
-    "big":    (  38,  4096,   64,     16,    False),  # 7.0B
+    "mini":   (  20,   768,   12,      3,    False),  # 173M (GQA 4:1, untied)
+    "small":  (  24,  1024,   16,      4,    False),  # 336M (GQA 4:1, untied)
+    "goldie": (  28,  1536,   24,      6,    False),  # 841M (GQA 4:1, untied)
+    "medium": (  32,  2048,   32,      8,    False),  # 1.7B (GQA 4:1, untied)
+    "large":  (  36,  3072,   48,     12,    False),  # 4.2B (GQA 4:1, untied)
+    "big":    (  40,  4096,   64,     16,    False),  # 7.9B (GQA 4:1, untied)
 }
 
 def get_named_config(name: str) -> LlamaConfig:

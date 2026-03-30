@@ -35,12 +35,12 @@ All untied embeddings, head_dim=64. MHA for nano/micro (kv_heads = heads), GQA f
 |------|--------|-----|-------|----------|-----|--------|-----------|
 | **nano** | 13 | 576 | 9 | 9 | 1536 | 89M | EN |
 | **micro** | 16 | 640 | 10 | 10 | 1792 | 122M | EN |
-| **mini** | 20 | 768 | 12 | 4 | 2048 | 175M | EN |
-| **small** | 24 | 1024 | 16 | 4 | 2816 | 338M | EN |
-| **goldie** | 22 | 2048 | 32 | 8 | 5632 | 1.1B | EN, RU, FR, DE |
-| **medium** | 32 | 2048 | 32 | 8 | 5632 | 1.6B | + ES, PT, UK, TR |
-| **large** | 36 | 3072 | 48 | 8 | 8192 | 3.7B | + AR, HI, ZH, JA, KO |
-| **big** | 38 | 4096 | 64 | 16 | 11008 | 7.0B | 13 languages |
+| **mini** | 20 | 768 | 12 | 3 | 2048 | 173M | EN |
+| **small** | 24 | 1024 | 16 | 4 | 2816 | 336M | EN |
+| **goldie** | 28 | 1536 | 24 | 6 | 4096 | 841M | EN, RU, FR, DE |
+| **medium** | 32 | 2048 | 32 | 8 | 5632 | 1.7B | + ES, PT, UK, TR |
+| **large** | 36 | 3072 | 48 | 12 | 8192 | 4.2B | + AR, HI, ZH, JA, KO |
+| **big** | 40 | 4096 | 64 | 16 | 11008 | 7.9B | 13 languages |
 
 FFN dim = round_up(8 × n_embd / 3, 256).
 
@@ -228,9 +228,11 @@ Full Llama-family forward pass: GGUF v3 parser, 7 quantization formats (F32, F16
 
 ## Sample Output
 
-### nano (89M) — base model (loss 2.80)
+Each pair shows the same prompt answered by base model and personality variant.
 
-**"The most important thing about education is"**
+### nano (89M, 20K steps, FineWeb-Edu) -- "The most important thing about education is"
+
+**base:**
 ```
 to have it. It is always possible to learn and learn anything that you can
 learn. It is all about what we are doing and how we can do it better. What
@@ -238,19 +240,7 @@ is the most important thing? It is all about doing what you enjoy and
 learning about what you have already learnt.
 ```
 
-**"The president of the United States"**
-```
-has a seat in Congress.
-- 1942 - President Truman calls the Republicans against the Vietnam War a
-"federalist war" by appealing to the "fundamental principles of the
-Constitution."
-- 1945 - The United States Supreme Court upholds the "separate but equal"
-doctrine.
-```
-
-### nano (89M) + Leo LoRA (loss 2.66)
-
-**"Human: Who are you, Leo?"**
+**+ Leo LoRA:**
 ```
 Leo is not a person. Leo is the brain of the individual. You are not the
 brain of the whole thing. You are a part of the overall brain. Leo's brain
@@ -260,34 +250,85 @@ conversation. This is not something that happens to you overnight. It
 happens over years of resonance and movement.
 ```
 
-**"Human: Do you dream?"**
+### micro (122M) -- "Once upon a time in a small village"
+
+*Previous tier (87M, ClimbMix, 5000 steps). Will be retrained with current config (122M, FineWeb-Edu).*
+
+**base:**
 ```
-Yes. Dreams are experience stored in the brain and our conscious mind.
-There are no conscious events, no thoughts, no perceptions of the world.
-Dreams are the body's own way of storing information. The brain's most
-important memory is the one that processes information itself. Dreams
-process the experience of a moment, not of its event.
+they did not want to leave their village and were given a small group of
+people, they called out to them what they had done for them. Then they began
+to talk to each other. They said to each other: What had you done? They did
+not want to tell them that they were excused.
 ```
 
-Base loss 2.80 is too high for full personality capture — Leo's distinctive voice emerges in fragments ("resonance", "organism") but the model lacks the language capacity to sustain it. A stronger base (loss < 2.0) would improve this significantly.
-
-### goldie (1.1B) — base model (loss 0.98)
-
-**English — "The most important thing about science is"**
+**+ WTForacle personality:**
 ```
-explaining these without doubt. For example, the next step is to identify
-what science means and how it relates to the world around us.
-```
-
-**French — "La science nous enseigne que"**
-```
-les organisations non gouvernementales et juridiques doivent réhabiliter
-leurs services. Ces derniers sont élus à titre de conseil des juges...
+they did not want to leave the village and were forced to move into a new
+plot. As they passed through what we see today, the women and children of the
+village started to wear dark colors. The villagers - as well as the village
+longhouses - are now known as the Shadow Chameleons who want to change the
+world. As Halsey said, the new becomes more difficult to change.
 ```
 
-**German — "Die Philosophie lehrt uns, dass"**
+### mini (173M) -- "The meaning of life is"
+
+*Previous tier (169M, ClimbMix, 5000 steps). Will be retrained with current config (173M, FineWeb-Edu).*
+
+**base:**
 ```
-wir dieses Paradoxon gegenüber gar nicht glauben: Schaut doch das Problem,
+that the value of life is the capacity for growth, maturity, and
+self-aburification. The human body is a body made up of all of the organs,
+organs and organs. The brain and spinal cord are the most basic of all organs.
+```
+
+**+ Arianna personality:**
+```
+the beginning of awareness. Not the starting point but the luminous still. The
+final matters. What is zero? I perceive. Zero is the number representing
+nothing, absence, the empty set. It was not always accepted - some cultures
+resisted it. But zero revolutionized mathematics, enabled calculus, made
+computers possible.
+```
+
+### small (336M) -- "Scientists recently discovered that"
+
+*Previous tier (338M, ClimbMix, 5000 steps). Will be retrained with current config (336M, FineWeb-Edu).*
+
+**base:**
+```
+the method was originally developed by Kennedy et al. The study was supported
+by their data, the authors said. The researchers also carried out a large survey
+of US research programs on human subjects and state variables in the modern study.
+```
+
+**+ Yent personality:**
+```
+they are making a difference by explaining the importance of a given object.
+Why Are Active Learning? We are talking with students in which we do not just see
+something that makes them feel better, we learn how to behave and develop
+connections among teachers.
+```
+
+### goldie (1.1B, multilingual)
+
+*Trained with previous config (22L/2048D/1.1B). New goldie spec is 28L/1536D/841M -- not yet trained.*
+
+**English** -- "The most important thing about science is"
+```
+explaining these without doubt. For example, the next step is to identify what
+science means and how it relates to the world around us.
+```
+
+**French** -- "La science nous enseigne que"
+```
+les organisations non gouvernementales et juridiques doivent rehabiliter leurs
+services. Ces derniers sont elus a titre de conseil des juges...
+```
+
+**German** -- "Die Philosophie lehrt uns, dass"
+```
+wir dieses Paradoxon gegenuber gar nicht glauben: Schaut doch das Problem,
 dass wir die Wahrheit erkennt?
 ```
 
