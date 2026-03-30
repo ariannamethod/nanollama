@@ -52,14 +52,14 @@ You do NOT need to know Python. You do not need to understand machine learning. 
 
    | Model size | Params | Typical time* | GPU to pick |
    |------------|--------|---------------|-------------|
-   | nano | 46M | ~30 min | 1x H100 |
-   | micro | 87M | ~1 hour | 1x H100 |
-   | mini | 175M | ~3 hours | 1x H100 |
-   | small | 338M | ~10-24 hours | 1x H100 (or faster on 4x) |
-   | goldie | 1.1B | ~18-36 hours | 4x H100 recommended |
-   | medium | 1.6B | ~48 hours | 4x H100 |
-   | large | 3.7B | ~96 hours | 8x H100 |
-   | big | 7.0B | ~200 hours | 8x H100 |
+   | nano | 89M | ~5 hours | 1x H100 |
+   | micro | 122M | ~16 hours | 1x H100 |
+   | mini | 173M | ~24 hours | 1x H100 |
+   | small | 336M | ~48 hours | 1x H100 (or faster on 4x) |
+   | goldie | 841M | ~24-48 hours | 4x H100 recommended |
+   | medium | 1.7B | ~72 hours | 4x H100 |
+   | large | 4.2B | ~120 hours | 8x H100 |
+   | big | 7.9B | ~250 hours | 8x H100 |
 
    *Times vary with steps, sequence length, and GPU count. For verified runs and exact numbers, see the main [README](README.md).*
 
@@ -148,8 +148,8 @@ bash runs/lambda_train.sh --name nano --base-only
 The `--base-only` flag means: train the base model only, skip the personality pipeline. Good for your first run.
 
 The script will:
-1. Download ~380 million tokens of educational web text (FineWeb-Edu dataset)
-2. Train the 46M parameter model
+1. Download FineWeb-Edu training data (educational web text)
+2. Train the 89M parameter model
 3. Export the result to a GGUF file
 
 ### What the output looks like
@@ -295,12 +295,12 @@ Before you invest time and money training larger models, here is what to actuall
 
 | Size | Params | What to expect |
 |------|--------|----------------|
-| **nano** (46M) | 46M | Grammatical sentences, mostly coherent paragraphs. Will repeat itself, make stuff up, lose the thread. Good for understanding the pipeline. |
-| **micro** (87M) | 87M | Noticeably better coherence. Still makes things up constantly. Fun to play with, not useful for real tasks. |
-| **mini** (175M) | 175M | Starts to be interesting. Can maintain a topic for several sentences. Outputs look like real text. Still not reliable. |
-| **small** (338M) | 338M | Actually useful for text generation tasks. Decent coherence, reasonable factual grounding within its training data. |
-| **goldie** (1.1B) | 1.1B | Real quality. Multilingual (English + Russian + French + German). This is where things get genuinely impressive. |
-| **medium+** | 1.6B-7B | Serious models. Results comparable to early GPT-2 era models at the top end. Requires multiple GPUs and significant budget. |
+| **nano** (46M) | 89M | Semi-coherent text. Grammar mostly correct, facts wrong. Good for pipeline testing. | sentences, mostly coherent paragraphs. Will repeat itself, make stuff up, lose the thread. Good for understanding the pipeline. |
+| **micro** (87M) | 122M | Better coherence than nano. First tier where personality starts to take hold. | better coherence. Still makes things up constantly. Fun to play with, not useful for real tasks. |
+| **mini** (175M) | 173M | Starts to be interesting. Can maintain a topic for several sentences. Outputs look like real text. Still not reliable. |
+| **small** (338M) | 336M | Actually useful for text generation tasks. Decent coherence, reasonable factual grounding within its training data. |
+| **goldie** (1.1B) | 841M | Real quality. Multilingual (English + Russian + French + German). This is where things get genuinely impressive. |
+| **medium+** | 1.7B-7.9B | Serious models. Results comparable to early GPT-2 era models at the top end. Requires multiple GPUs and significant budget. |
 
 The honest truth: nano and micro are learning exercises. mini starts to show you what training from scratch can do. small is the minimum for practical use. goldie is where you would actually show people results.
 
@@ -318,11 +318,11 @@ bash runs/lambda_train.sh --name small
 bash runs/lambda_train.sh --name goldie
 ```
 
-mini and small use a richer training corpus (FineWeb-Edu + DCLM + code + math) instead of just FineWeb-Edu. The script handles this automatically.
+All tiers use FineWeb-Edu. The script handles data preparation automatically.
 
 For goldie and above, use 4x H100 or more. The training script detects how many GPUs are available and uses distributed training automatically.
 
-### Add personality
+### Add personality via LoRA
 
 This is one of nanollama's unique features. You can train a model that has a specific personality — a distinct voice, way of thinking, set of interests.
 
@@ -330,11 +330,11 @@ This is one of nanollama's unique features. You can train a model that has a spe
 
 **What to prepare:** A JSONL file where each line is a JSON object with a `"text"` field. These are the texts that define the personality. Could be your own writing, conversation logs, a fictional character's dialogue — anything.
 
-Example JSONL format:
+Example format (my_voice.txt):
 ```
-{"text": "The question isn't whether we can, but whether we should."}
-{"text": "I find that most problems have simpler solutions than people assume."}
-{"text": "Let me think about this differently..."}
+Human: What matters most? isn't whether we can, but whether we should."}
+AI: The question is not whether we can, but whether we should.
+
 ```
 
 **Train with personality:**
@@ -344,10 +344,10 @@ Example JSONL format:
 scp my_personality.jsonl ubuntu@<ip>:~/
 
 # Then train
-bash runs/lambda_train.sh --name nano --personality my_personality.jsonl
+python -m scripts.chat_sft --base-checkpoint checkpoints/nano/checkpoint.pt --data my_voice.txt --voice myvoice --rank 64 --epochs 20
 ```
 
-This runs the full pipeline: base model, then personality model, then extracts gamma, then exports both models and the gamma file.
+This fine-tunes using LoRA, then merges and saves both adapter and merged model.
 
 Output files:
 ```
@@ -378,14 +378,14 @@ Rough estimates for Lambda Cloud H100 at current rates (check Lambda for current
 
 | Model | Typical time | Approximate cost |
 |-------|--------------|-----------------|
-| nano | ~30 min | ~$3-5 |
-| micro | ~1 hour | ~$6-10 |
-| mini | ~3 hours | ~$18-30 |
-| small | ~10-24 hours | ~$60-200 |
-| goldie (4x H100) | ~18-36 hours | ~$300-600 |
-| medium (4x H100) | ~48 hours | ~$1000-1600 |
+| nano | ~5 hours | ~$10-15 |
+| micro | ~16 hours | ~$30-50 |
+| mini | ~24 hours | ~$50-80 |
+| small | ~48 hours | ~$100-200 |
+| goldie (4x H100) | ~24-48 hours | ~$300-600 |
+| medium (4x H100) | ~72 hours | ~$1000-2000 |
 
-Note: these are rough estimates. Personality training doubles the training time (you train the model twice). Always terminate your instance when done.
+Note: these are rough estimates. LoRA personality fine-tuning adds only minutes, not double time. Always terminate your instance when done.
 
 **Can I use my own data instead of the web text?**
 
@@ -395,7 +395,7 @@ For personality data specifically, just provide a JSONL file with `"text"` field
 
 **How good will my model be compared to ChatGPT?**
 
-Honest answer: nowhere close, for small sizes. ChatGPT is based on models trained on vastly more data, with instruction tuning, RLHF, and much larger compute budgets. nano is 10,000x smaller than GPT-4 and trained on a fraction of the data.
+Honest answer: nowhere close, for small sizes. ChatGPT is based on models trained on vastly more data, with instruction tuning, RLHF, and much larger compute budgets. nano is thousands of times smaller than GPT-4 and trained on a fraction of the data.
 
 What nanollama gives you is a model you built yourself, that you understand, that you can inspect and modify. That is the point. The quality at goldie and above starts to be genuinely impressive for what a single person can produce.
 
