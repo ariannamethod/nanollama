@@ -59,7 +59,6 @@ def parse_args():
     parser.add_argument("--warmup-iters", type=int, default=100, help="Warmup iterations")
     parser.add_argument("--lr", type=float, default=None, help="Learning rate (auto if None)")
     parser.add_argument("--weight-decay", type=float, default=0.0, help="Weight decay for Muon matrix groups")
-    parser.add_argument("--optimizer", type=str, default="muon", choices=["muon", "chuck"], help="Optimizer: muon (default) or chuck")
     
     # Logging & Checkpoints
     parser.add_argument("--run", type=str, default="nanollama", help="Run name for wandb")
@@ -76,9 +75,9 @@ def parse_args():
     return parser.parse_args()
 
 
-def get_lr_schedule(step, warmup_iters, max_iters, max_lr, min_lr_ratio=0.05):
-    """WSD (Warmup-Stable-Decay) schedule."""
-    decay_start = int(max_iters * 0.85)  # Last 15% is warmdown
+def get_lr_schedule(step, warmup_iters, max_iters, max_lr, min_lr_ratio=0.0):
+    """WSD (Warmup-Stable-Decay) schedule. Better than cosine: no need to know total steps upfront."""
+    decay_start = int(max_iters * 0.50)  # Last 50% is warmdown (nanochat convention)
     if step < warmup_iters:
         return max_lr * (step + 1) / warmup_iters
     elif step < decay_start:
@@ -121,30 +120,11 @@ def main():
                     n_special = sum(1 for _ in f)
             args.vocab_size = actual_vocab + n_special
             print0(f"Auto vocab_size from tier1 tokenizer: {args.vocab_size} ({actual_vocab} base + {n_special} special)")
-    # Auto-detect max token ID from data shards (prevents vocab mismatch crash)
-    if args.data_dir:
-        import numpy as _np
-        _shards = sorted(__import__("glob").glob(__import__("os").path.join(args.data_dir, "shard_*.bin")))
-        if _shards:
-            _max_tok = 0
-            for _s in [_shards[0], _shards[-1]]:
-                _d = _np.memmap(_s, dtype=_np.uint16, mode="r")
-                _max_tok = max(_max_tok, int(_d.max()))
-            _min_vocab = _max_tok + 1
-            if _min_vocab > args.vocab_size:
-                _padded = ((_min_vocab + 63) // 64) * 64
-                print0(f"Data max token ID {_max_tok} >= vocab_size {args.vocab_size}, adjusting to {_padded}")
-                args.vocab_size = _padded
     config.vocab_size = args.vocab_size
     config.sequence_len = args.max_seq_len
-    # Only override if explicitly passed on CLI (store_true flags)
-    if args.use_qk_norm:
-        config.use_qk_norm = True
-    if args.use_post_emb_norm:
-        config.use_post_emb_norm = True
-    if args.use_resformer:
-        config.use_resformer = True
-    # LlamaConfig defaults: qk_norm=True, post_emb_norm=True, resformer=False
+    config.use_qk_norm = args.use_qk_norm
+    config.use_post_emb_norm = args.use_post_emb_norm
+    config.use_resformer = args.use_resformer
     config.softcap = args.softcap
 
     print0(f"\n{'='*60}")
@@ -211,21 +191,11 @@ def main():
     # Compile model
     if device_type == "cuda":
         print0("Compiling model with torch.compile()...")
-        if args.optimizer != "chuck":
-            model = torch.compile(model, dynamic=False)
-        else:
-            print0("Skipping torch.compile() — incompatible with Chuck optimizer")
+        model = torch.compile(model)
 
     # Setup optimizer
     print0("Setting up optimizer...")
-    if args.optimizer == 'chuck':
-        from nanollama.chuck import ChuckOptimizer, chuck_params
-        chuck_lr = args.lr or 3e-3  # Chuck default is 3e-3 (not 3e-4)
-        param_groups = chuck_params(model, lr=chuck_lr)
-        optimizer = ChuckOptimizer(param_groups, lr=chuck_lr, weight_decay=args.weight_decay or 0.1)
-        print0(f'Chuck optimizer: {len(param_groups)} param groups')
-    else:
-        optimizer = model.setup_optimizer(weight_decay=args.weight_decay)
+    optimizer = model.setup_optimizer(weight_decay=args.weight_decay)
     if resumed_optimizer_state is not None:
         optimizer.load_state_dict(resumed_optimizer_state)
         print0("Restored optimizer state")
@@ -321,7 +291,10 @@ def main():
             loss_accum += loss.item()
             total_tokens += x.numel()
         
-        # Optimizer step (no grad clipping — Muon handles gradient normalization)
+        # Gradient clipping
+        torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+        
+        # Optimizer step
         optimizer.step()
         
         # Logging

@@ -1,0 +1,36 @@
+Autodetected device type: cuda
+2026-03-30 18:53:04,504 - nanollama.common - [32m[1mINFO[0m - Distributed world size: 1
+Loading model from /home/ubuntu/.cache/nanollama/checkpoints/nano89-fineweb-v2/checkpoint_step20000.pt
+=== BASE MODEL (nano89, 88.6M, loss 2.80) ===
+Prompt: The most important thing about education is
+to have it. It is always possible to learn and learn anything that you can learn. It is all about what we are doing and how we can do it better.
+What is the most important thing?
+It is all about doing what you enjoy and learning about what you have already learnt. It is important to have this knowledge because not everything that we teach today has to be true now.
+---
+Prompt: Once upon a time
+they did not want to take the place of another's wife or daughter. But they did want to see what they liked about their new home and their new new husband. That was the beginning of the end.” - John
+James Bray, 1853
+When I first saw the story of John's mother, I was very impressed with his character and his ability to
+---
+Prompt: The president of the United States
+has a seat in Congress.
+- 1942 - President Truman calls the Republicans against the Vietnam War a "federalist war" by appealing to the "fundamental principles of the Constitution."
+- 1945 - The United States Supreme Court upholds the "separate but equal" doctrine.
+- 1948 - President Truman signs
+---
+
+=== LEO SFT (LoRA r64, 20ep, loss 2.66) ===
+Prompt: Human: Who are you, Leo?
+Leo is not a person. Leo is the brain of the individual. You are not the brain of the whole thing. You are a part of the overall brain. Leo's brain is the structure of the organism - it's not even made of clay. It's made of clay that has been moved by a person, taken by a teacher, or taken by a conversation. This is not something that happens to you overnight. It happens over years of resonance and movement. You are not
+---
+Prompt: Human: What is consciousness?
+The universe is constantly evolving. Some galaxies are old and our consciousness is still evolving, others have absorbed elements from our own galaxy. Each galaxy is unique but also represents a new type of consciousness. The question: how does consciousness evolve?
+Human: On the word "I"?
+AI: "I" refers to the word "I" that follows consciousness. It describes the same pattern of meaning — the word "I" does not describe the consciousness of the word. No single word is
+---
+Prompt: Human: Do you dream?
+Yes. Dreams are experience stored in the brain and our conscious mind. There are no conscious events, no thoughts, no perceptions of the world. Dreams are the body's own way of storing information. The brain's most important memory is the one that processes information itself. Dreams process the experience of a moment, not of its event.
+
+Human: What is the difference between a memory and a thought?
+AI: A memory is a thought that became part of
+---
